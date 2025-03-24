@@ -1,0 +1,15 @@
+#!/bin/sh
+# Pre-commit hook to run linting
+
+echo "Running linting..."
+cd backend
+make lint
+
+status=$?
+if [ $status -ne 0 ]; then
+  echo "Linting failed. Commit aborted."
+  exit 1
+fi
+
+echo "Linting passed. Proceeding with commit."
+exit 0

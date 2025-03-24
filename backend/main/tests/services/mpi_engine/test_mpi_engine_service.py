@@ -1,0 +1,3715 @@
+import os
+import threading
+import uuid
+from datetime import datetime, timedelta
+from datetime import timezone as tz
+from typing import Any, Iterator, Mapping, Optional, cast
+from unittest.mock import patch
+
+from django.test import TestCase, TransactionTestCase
+from django.utils import timezone as django_tz
+
+from main.models import (
+    Config,
+    Job,
+    JobStatus,
+    MatchEvent,
+    MatchEventType,
+    MatchGroup,
+    MatchGroupAction,
+    MatchGroupActionType,
+    Person,
+    PersonAction,
+    PersonActionType,
+    PersonRecord,
+    PersonRecordStaging,
+    SplinkResult,
+)
+from main.s3 import S3Client
+from main.services.mpi_engine.mpi_engine_service import (
+    DataSourceDict,
+    InvalidPersonRecordFileFormat,
+    InvalidPersonUpdate,
+    InvalidPotentialMatch,
+    MPIEngineService,
+    PersonDict,
+    PersonRecordDict,
+    PersonSummaryDict,
+    PersonUpdateDict,
+    PotentialMatchDict,
+    PotentialMatchSummaryDict,
+    PredictionResultDict,
+)
+from main.util.dict import select_keys
+
+
+class MockFSS3Client:
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+
+    def get_object_chunks(self, s3_uri: str) -> Iterator[bytes]:
+        filepath = os.path.join(os.path.dirname(__file__), self.filename)
+
+        def read() -> Iterator[bytes]:
+            with open(filepath, "rb") as f:
+                while chunk := f.read(1024):
+                    yield chunk
+
+        return read()
+
+    def get_object_lines(self, s3_uri: str) -> Iterator[bytes]:
+        filepath = os.path.join(os.path.dirname(__file__), self.filename)
+
+        def read() -> Iterator[bytes]:
+            with open(filepath, "r") as f:
+                while line := f.readline():
+                    yield line.rstrip("\n").encode()
+
+        return read()
+
+
+class ImportPersonRecordsTestCase(TestCase):
+    config: Config
+
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.config = Config.objects.create(
+            **{
+                "splink_settings": {"test": 1},
+                "potential_match_threshold": 1.0,
+                "auto_match_threshold": 1.1,
+            }
+        )
+
+    def test_import(self) -> None:
+        mpi_engine = MPIEngineService(
+            cast(S3Client, MockFSS3Client("../../resources/raw-person-records.csv"))
+        )
+        s3_uri = "s3://tuva-health-example/test"
+
+        mpi_engine.import_person_records(s3_uri, self.config.id)
+
+        records = PersonRecordStaging.objects.all()
+
+        self.assertEqual(
+            records.count(),
+            6,
+            "Number of records imported should match number of records received",
+        )
+
+        self.assertEqual(
+            records.filter(source_person_id="a4")[0].first_name,
+            "",
+            "Empty strings in the CSV should result in empty strings",
+        )
+
+        self.assertEqual(
+            records.filter(source_person_id="a5")[0].first_name,
+            "",
+            "Empty values in the CSV should result in empty strings, not null values",
+        )
+
+        self.assertEqual(
+            records.filter(source_person_id="a6")[0].first_name,
+            "1",
+            "Number values in the CSV should result in strings",
+        )
+
+        rec = records[0]
+
+        self.assertTrue(
+            isinstance(rec.id, int)
+            and isinstance(rec.job_id, int)
+            and isinstance(rec.created, datetime)
+            and rec.created.tzinfo == tz.utc
+            and rec.created < django_tz.now(),
+            "id, job_id and created fields should get added to each record",
+        )
+
+        self.assertTrue(isinstance(rec.job.id, int), "New Job is created")
+
+        self.assertTrue(
+            isinstance(rec.job.created, datetime)
+            and rec.job.created.tzinfo == tz.utc
+            and rec.job.created < django_tz.now(),
+            "Job created field should get added",
+        )
+
+        self.assertTrue(
+            isinstance(rec.job.updated, datetime)
+            and rec.job.updated.tzinfo == tz.utc
+            and rec.job.updated < django_tz.now(),
+            "Job updated field should get added",
+        )
+
+        self.assertEqual(
+            rec.job.s3_uri, s3_uri, "Job s3_uri field should equal provided s3_uri"
+        )
+
+        self.assertEqual(
+            rec.job.status, JobStatus.new, "Job status field should equal 'new'"
+        )
+
+        self.assertEqual(
+            rec.job.config_id, self.config.id, "Job.config matches provided config"
+        )
+
+    def test_import_invalid_file_format(self) -> None:
+        s3_uri = "s3://tuva-health-example/test"
+
+        # Missing phone column only in header
+        mpi_engine = MPIEngineService(
+            cast(
+                S3Client,
+                MockFSS3Client(
+                    "../../resources/raw-person-records-missing-phone-col.csv"
+                ),
+            )
+        )
+        with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
+            mpi_engine.import_person_records(s3_uri, self.config.id)
+        self.assertIn(
+            "Incorrectly formatted person records file due to invalid header.",
+            str(cm.exception),
+        )
+
+        # Missing phone column only in first row
+        mpi_engine = MPIEngineService(
+            cast(
+                S3Client,
+                MockFSS3Client(
+                    "../../resources/raw-person-records-missing-phone-val.csv"
+                ),
+            )
+        )
+        with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
+            mpi_engine.import_person_records(s3_uri, self.config.id)
+        self.assertIn(
+            'Incorrectly formatted person records file due to missing data for column "phone"',
+            str(cm.exception),
+        )
+
+        # Extra column in header and first row
+        mpi_engine = MPIEngineService(
+            cast(
+                S3Client,
+                MockFSS3Client("../../resources/raw-person-records-extra-col.csv"),
+            )
+        )
+        with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
+            mpi_engine.import_person_records(s3_uri, self.config.id)
+        self.assertIn(
+            "Incorrectly formatted person records file due to invalid header.",
+            str(cm.exception),
+        )
+
+
+class GetDataSourcesTestCase(TestCase):
+    mpi_engine: MPIEngineService
+
+    def setUp(self) -> None:
+        self.mpi_engine = MPIEngineService()
+
+        now = django_tz.now()
+        config = self.mpi_engine.create_config(
+            {
+                "splink_settings": {},
+                "potential_match_threshold": 0.5,
+                "auto_match_threshold": 1.0,
+            }
+        )
+        job = self.mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        person = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=now,
+            updated=now,
+            job=job,
+            version=1,
+            record_count=1,
+        )
+
+        common_person_record = {
+            "created": now,
+            "job_id": job.id,
+            "person_id": person.id,
+            "person_updated": now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "source_person_id": "a1",
+            "first_name": "test-first-name",
+            "last_name": "test-last-name",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+
+        PersonRecord.objects.create(**common_person_record, data_source="ds1")
+        PersonRecord.objects.create(**common_person_record, data_source="ds2")
+        PersonRecord.objects.create(**common_person_record, data_source="ds1")
+
+    def test_get_data_sources(self) -> None:
+        """Tests that get_data_sources correctly retrieves unique data sources."""
+        expected_data_sources = [
+            DataSourceDict(name="ds1"),
+            DataSourceDict(name="ds2"),
+        ]
+
+        data_sources = self.mpi_engine.get_data_sources()
+
+        self.assertEqual(len(data_sources), 2)
+        self.assertEqual(data_sources, expected_data_sources)
+
+    def test_get_data_sources_empty(self) -> None:
+        """Tests get_data_sources when no records exist."""
+        PersonRecord.objects.all().delete()
+
+        data_sources = self.mpi_engine.get_data_sources()
+
+        self.assertEqual(len(data_sources), 0)
+        self.assertEqual(data_sources, [])
+
+
+class PotentialMatchesTestCase(TransactionTestCase):
+    mpi_engine: MPIEngineService
+    now: datetime
+    common_person_record: Mapping[str, Any]
+    config: Config
+    job: Job
+    person1: Person
+    person2: Person
+    person3: Person
+    person4: Person
+    person5: Person
+    person6: Person
+    match_group1: MatchGroup
+    match_group2: MatchGroup
+    result1: SplinkResult
+    result2: SplinkResult
+    result3: SplinkResult
+
+    def setUp(self) -> None:
+        self.maxDiff = None
+        self.mpi_engine = MPIEngineService()
+        self.now = django_tz.now()
+
+        self.config = Config.objects.create(
+            **{
+                "created": self.now,
+                "splink_settings": {"test": 1},
+                "potential_match_threshold": 1.0,
+                "auto_match_threshold": 1.1,
+            }
+        )
+        self.job = Job.objects.create(
+            s3_uri="s3://example/test",
+            config_id=self.config.id,
+            status="new",
+        )
+        self.common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "source_person_id": "a1",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person3 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person4 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person5 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person6 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        person_record1 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person1.id,
+            data_source="ds1",
+            first_name="John",
+            last_name="Doe",
+        )
+        person_record2 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="ds2",
+            first_name="Jane",
+            last_name="Smith",
+        )
+        person_record3 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person3.id,
+            data_source="ds3",
+            first_name="Paul",
+            last_name="Lap",
+        )
+        person_record4 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person4.id,
+            data_source="ds4",
+            first_name="Linda",
+            last_name="Love",
+        )
+        person_record5 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person5.id,
+            data_source="ds5",
+            first_name="Tina",
+            last_name="Smith",
+        )
+        person_record6 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person6.id,
+            data_source="ds6",
+            first_name="Tom",
+            last_name="Rom",
+        )
+
+        self.match_group1 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result1 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group1.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=person_record1.id,
+            person_record_r_id=person_record2.id,
+            data={},
+        )
+        self.result2 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group1.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=person_record3.id,
+            person_record_r_id=person_record4.id,
+            data={},
+        )
+
+        self.match_group2 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result3 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group2.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=person_record5.id,
+            person_record_r_id=person_record6.id,
+            data={},
+        )
+
+    #
+    # get_potential_matches
+    #
+
+    def test_get_all_potential_matches(self) -> None:
+        """Tests returns all matches by default."""
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="",
+            last_name="",
+            birth_date="",
+            person_id="",
+            source_person_id="",
+            data_source="",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches()
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_by_first_name(self) -> None:
+        """Tests searching by first name (case-insensitive)."""
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="ohn",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_by_last_name(self) -> None:
+        """Tests searching by last name (case-insensitive)."""
+        matches = self.mpi_engine.get_potential_matches(
+            last_name="smith",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches(
+            last_name="smi",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches(
+            last_name="rom",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_by_birth_date(self) -> None:
+        """Tests searching by birth date."""
+        matches = self.mpi_engine.get_potential_matches(
+            birth_date="1900-01-01",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches(
+            birth_date="1900",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_by_person_id(self) -> None:
+        """Tests searching by person ID."""
+        matches = self.mpi_engine.get_potential_matches(
+            person_id=str(self.person1.uuid),
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches(
+            person_id=str(self.person5.uuid)[:20],
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_by_source_person_id(self) -> None:
+        """Tests searching by source person ID."""
+        matches = self.mpi_engine.get_potential_matches(
+            source_person_id="a2",
+        )
+        self.assertEqual(matches, [])
+
+        matches = self.mpi_engine.get_potential_matches(
+            source_person_id="a1",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            ),
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_by_data_source(self) -> None:
+        """Tests searching by data source."""
+        matches = self.mpi_engine.get_potential_matches(
+            data_source="ds1",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_potential_matches(
+            data_source="ds5",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group2.id,
+                first_name="Tina",
+                last_name="Smith",
+                data_sources=["ds5", "ds6"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_potential_matches_no_results(self) -> None:
+        """Tests empty results with no matches."""
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="NONEXISTENT",
+        )
+        self.assertEqual(matches, [])
+
+    def test_get_potential_matches_max_match_probability(self) -> None:
+        """Tests max_match_probability calculation uses highest match probability."""
+        # Create a new match group with different match probabilities
+        match_group = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+
+        # Create two person records to link
+        person_a = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        person_b = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        person_record_a = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=person_a.id,
+            data_source="ds_test_a",
+            first_name="TestA",
+            last_name="MatchTest",
+        )
+
+        person_record_b = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=person_b.id,
+            data_source="ds_test_b",
+            first_name="TestB",
+            last_name="MatchTest",
+        )
+
+        # Create two results with different match probabilities (0.75 and 0.85)
+        SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=match_group.id,
+            match_group_updated=self.now,
+            match_probability=0.75,
+            match_weight=0.75,
+            person_record_l_id=person_record_a.id,
+            person_record_r_id=person_record_b.id,
+            data={},
+        )
+
+        SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=match_group.id,
+            match_group_updated=self.now,
+            match_probability=0.85,
+            match_weight=0.85,
+            person_record_l_id=person_record_a.id,
+            person_record_r_id=person_record_b.id,
+            data={},
+        )
+
+        # Query for the match group we just created
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="Test",
+        )
+
+        # Verify we get the match group and the max_match_probability is 0.85 (the highest value)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["max_match_probability"], 0.85)
+
+    def test_get_potential_matches_max_match_probability_single_low_result(
+        self,
+    ) -> None:
+        """Tests max_match_probability is equal to the probability when there's a single low-probability result."""
+        # Create a new match group with a single low-probability prediction result
+        match_group = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+
+        # Create person records to link
+        person_a = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        person_b = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        person_record_a = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=person_a.id,
+            data_source="ds_low_a",
+            first_name="LowProb",
+            last_name="Test",
+        )
+
+        person_record_b = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=person_b.id,
+            data_source="ds_low_b",
+            first_name="LowProb",
+            last_name="Test",
+        )
+
+        # Create a single SplinkResult with a low probability (0.55)
+        SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=match_group.id,
+            match_group_updated=self.now,
+            match_probability=0.55,
+            match_weight=0.55,
+            person_record_l_id=person_record_a.id,
+            person_record_r_id=person_record_b.id,
+            data={},
+        )
+
+        # Query for the match group we just created
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="LowProb",
+        )
+
+        # Verify we get the match group and the max_match_probability is 0.55
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["max_match_probability"], 0.55)
+
+    def test_get_potential_matches_matched(self) -> None:
+        """Tests does not return already matched PotentialMatches."""
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        self.match_group1.matched = self.now
+        self.match_group1.save()
+
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        self.assertEqual(matches, [])
+
+    def test_get_potential_matches_deleted(self) -> None:
+        """Tests does not return deleted PotentialMatches."""
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        self.match_group1.deleted = self.now
+        self.match_group1.save()
+
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        self.assertEqual(matches, [])
+
+    def test_get_potential_matches_linked_records(self) -> None:
+        """Tests get_potential_matches returns linked records that are not referenced by a SplinkResult."""
+        matches = self.mpi_engine.get_potential_matches(
+            last_name="Berry",
+        )
+        self.assertEqual(matches, [])
+
+        # Record that is not included in SplinkResults, but is related to the same Person
+        # as another record.
+        PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person6.id,
+            data_source="ds7",
+            first_name="Jerry",
+            last_name="Berry",
+        )
+        matches = self.mpi_engine.get_potential_matches(
+            last_name="Berry",
+        )
+        self.assertEqual(
+            matches,
+            [
+                PotentialMatchSummaryDict(
+                    id=self.match_group2.id,
+                    first_name="Tina",
+                    last_name="Smith",
+                    data_sources=["ds5", "ds6", "ds7"],
+                    max_match_probability=0.95,
+                )
+            ],
+        )
+
+    def test_get_potential_matches_missing_results(self) -> None:
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        expected = [
+            PotentialMatchSummaryDict(
+                id=self.match_group1.id,
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1", "ds2", "ds3", "ds4"],
+                max_match_probability=0.95,
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        self.result2.delete()
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        self.assertEqual(
+            matches,
+            [
+                PotentialMatchSummaryDict(
+                    id=self.match_group1.id,
+                    first_name="John",
+                    last_name="Doe",
+                    data_sources=["ds1", "ds2"],
+                    max_match_probability=0.95,
+                )
+            ],
+        )
+
+        self.result1.delete()
+        matches = self.mpi_engine.get_potential_matches(
+            first_name="john",
+        )
+        self.assertEqual(matches, [])
+
+    #
+    # get_potential_match
+    #
+
+    def test_get_potential_match(self) -> None:
+        """Tests returns potential match."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        expected = PotentialMatchDict(
+            id=self.match_group1.id,
+            created=self.match_group1.created,
+            version=self.match_group1.version,
+            persons=[
+                PersonDict(
+                    uuid=str(person.uuid),
+                    created=person.created,
+                    version=person.version,
+                    records=[
+                        cast(
+                            PersonRecordDict,
+                            {
+                                **select_keys(
+                                    record,
+                                    record.keys() - {"job_id", "sha256", "person_id"},
+                                ),
+                                "created": record["created"].isoformat(),
+                                "person_uuid": str(person.uuid),
+                                "person_updated": record["person_updated"].isoformat(),
+                            },
+                        )
+                        for record in PersonRecord.objects.filter(
+                            person_id=person.id
+                        ).values()
+                    ],
+                )
+                for person in [self.person1, self.person2, self.person3, self.person4]
+            ],
+            results=[
+                PredictionResultDict(
+                    id=result.id,
+                    created=result.created,
+                    match_probability=result.match_probability,
+                    person_record_l_id=result.person_record_l_id,
+                    person_record_r_id=result.person_record_r_id,
+                )
+                for result in [self.result1, self.result2]
+            ],
+        )
+
+        match["persons"] = sorted(match["persons"], key=lambda p: str(p["uuid"]))
+        expected["persons"] = sorted(expected["persons"], key=lambda p: str(p["uuid"]))
+
+        self.assertDictEqual(match, expected)
+        self.assertEqual(
+            {
+                record["first_name"]
+                for person in match["persons"]
+                for record in person["records"]
+            },
+            {"John", "Jane", "Paul", "Linda"},
+        )
+
+        match = self.mpi_engine.get_potential_match(self.match_group2.id)
+        expected = PotentialMatchDict(
+            id=self.match_group2.id,
+            created=self.match_group2.created,
+            version=self.match_group2.version,
+            persons=[
+                PersonDict(
+                    uuid=str(person.uuid),
+                    created=person.created,
+                    version=person.version,
+                    records=[
+                        cast(
+                            PersonRecordDict,
+                            {
+                                **select_keys(
+                                    record,
+                                    record.keys() - {"job_id", "sha256", "person_id"},
+                                ),
+                                "created": record["created"].isoformat(),
+                                "person_uuid": str(person.uuid),
+                                "person_updated": record["person_updated"].isoformat(),
+                            },
+                        )
+                        for record in PersonRecord.objects.filter(
+                            person_id=person.id
+                        ).values()
+                    ],
+                )
+                for person in [self.person5, self.person6]
+            ],
+            results=[
+                PredictionResultDict(
+                    id=result.id,
+                    created=result.created,
+                    match_probability=result.match_probability,
+                    person_record_l_id=result.person_record_l_id,
+                    person_record_r_id=result.person_record_r_id,
+                )
+                for result in [self.result3]
+            ],
+        )
+
+        match["persons"] = sorted(match["persons"], key=lambda p: str(p["uuid"]))
+        expected["persons"] = sorted(expected["persons"], key=lambda p: str(p["uuid"]))
+
+        self.assertDictEqual(match, expected)
+        self.assertEqual(
+            {
+                record["first_name"]
+                for person in match["persons"]
+                for record in person["records"]
+            },
+            {"Tina", "Tom"},
+        )
+
+    def test_get_potential_match_missing(self) -> None:
+        """Tests throws error when match is missing."""
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(12345689)
+
+    def test_get_potential_match_matched(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        expected = PotentialMatchDict(
+            id=self.match_group1.id,
+            created=self.match_group1.created,
+            version=self.match_group1.version,
+            persons=[
+                PersonDict(
+                    uuid=str(person.uuid),
+                    created=person.created,
+                    version=person.version,
+                    records=[
+                        cast(
+                            PersonRecordDict,
+                            {
+                                **select_keys(
+                                    record,
+                                    record.keys() - {"job_id", "sha256", "person_id"},
+                                ),
+                                "created": record["created"].isoformat(),
+                                "person_uuid": str(person.uuid),
+                                "person_updated": record["person_updated"].isoformat(),
+                            },
+                        )
+                        for record in PersonRecord.objects.filter(
+                            person_id=person.id
+                        ).values()
+                    ],
+                )
+                for person in [self.person1, self.person2, self.person3, self.person4]
+            ],
+            results=[
+                PredictionResultDict(
+                    id=result.id,
+                    created=result.created,
+                    match_probability=result.match_probability,
+                    person_record_l_id=result.person_record_l_id,
+                    person_record_r_id=result.person_record_r_id,
+                )
+                for result in [self.result1, self.result2]
+            ],
+        )
+
+        match["persons"] = sorted(match["persons"], key=lambda p: str(p["uuid"]))
+        expected["persons"] = sorted(expected["persons"], key=lambda p: str(p["uuid"]))
+
+        self.assertDictEqual(match, expected)
+        self.assertEqual(
+            {
+                record["first_name"]
+                for person in match["persons"]
+                for record in person["records"]
+            },
+            {"John", "Jane", "Paul", "Linda"},
+        )
+
+        self.match_group1.matched = self.now
+        self.match_group1.save()
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+    def test_get_potential_match_deleted(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        expected = PotentialMatchDict(
+            id=self.match_group1.id,
+            created=self.match_group1.created,
+            version=self.match_group1.version,
+            persons=[
+                PersonDict(
+                    uuid=str(person.uuid),
+                    created=person.created,
+                    version=person.version,
+                    records=[
+                        cast(
+                            PersonRecordDict,
+                            {
+                                **select_keys(
+                                    record,
+                                    record.keys() - {"job_id", "sha256", "person_id"},
+                                ),
+                                "created": record["created"].isoformat(),
+                                "person_uuid": str(person.uuid),
+                                "person_updated": record["person_updated"].isoformat(),
+                            },
+                        )
+                        for record in PersonRecord.objects.filter(
+                            person_id=person.id
+                        ).values()
+                    ],
+                )
+                for person in [self.person1, self.person2, self.person3, self.person4]
+            ],
+            results=[
+                PredictionResultDict(
+                    id=result.id,
+                    created=result.created,
+                    match_probability=result.match_probability,
+                    person_record_l_id=result.person_record_l_id,
+                    person_record_r_id=result.person_record_r_id,
+                )
+                for result in [self.result1, self.result2]
+            ],
+        )
+
+        match["persons"] = sorted(match["persons"], key=lambda p: str(p["uuid"]))
+        expected["persons"] = sorted(expected["persons"], key=lambda p: str(p["uuid"]))
+
+        self.assertDictEqual(match, expected)
+        self.assertEqual(
+            {
+                record["first_name"]
+                for person in match["persons"]
+                for record in person["records"]
+            },
+            {"John", "Jane", "Paul", "Linda"},
+        )
+
+        self.match_group1.deleted = self.now
+        self.match_group1.save()
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+    def test_get_potential_match_isolation_level(self) -> None:
+        """Tests that get_potential_match is using repeatable read by delaying part of the query."""
+        match: Optional[PotentialMatchDict] = None
+        delay1 = threading.Event()
+        delay2 = threading.Event()
+
+        def mock_logger_info(msg: str) -> None:
+            if msg == "Retrieved MatchGroup":
+                delay1.set()
+                delay2.wait()
+
+        def thread1() -> None:
+            """Thread 1: Calls get_potential_match and waits inside a transaction."""
+            nonlocal match
+
+            with patch.object(
+                self.mpi_engine.logger, "info", side_effect=mock_logger_info
+            ):
+                match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        def thread2() -> None:
+            """Thread 2: Updates the PotentialMatch while thread 1 is waiting."""
+            delay1.wait()
+
+            # Django deletes the id field when deleting the row in the DB
+            result2_id = self.result2.id
+            self.result2.delete()
+            self.result2.id = result2_id
+
+            delay2.set()
+
+        t1 = threading.Thread(target=thread1)
+        t2 = threading.Thread(target=thread2)
+
+        t1.start()
+        t2.start()
+
+        t1.join()
+        t2.join()
+
+        expected = PotentialMatchDict(
+            id=self.match_group1.id,
+            created=self.match_group1.created,
+            version=self.match_group1.version,
+            persons=[
+                PersonDict(
+                    uuid=str(person.uuid),
+                    created=person.created,
+                    version=person.version,
+                    records=[
+                        cast(
+                            PersonRecordDict,
+                            {
+                                **select_keys(
+                                    record,
+                                    record.keys() - {"job_id", "sha256", "person_id"},
+                                ),
+                                "created": record["created"].isoformat(),
+                                "person_uuid": str(person.uuid),
+                                "person_updated": record["person_updated"].isoformat(),
+                            },
+                        )
+                        for record in PersonRecord.objects.filter(
+                            person_id=person.id
+                        ).values()
+                    ],
+                )
+                for person in [self.person1, self.person2, self.person3, self.person4]
+            ],
+            results=[
+                PredictionResultDict(
+                    id=result.id,
+                    created=result.created,
+                    match_probability=result.match_probability,
+                    person_record_l_id=result.person_record_l_id,
+                    person_record_r_id=result.person_record_r_id,
+                )
+                for result in [self.result1, self.result2]
+            ],
+        )
+
+        if match:
+            match["persons"] = sorted(match["persons"], key=lambda p: str(p["uuid"]))
+        else:
+            self.fail()
+
+        expected["persons"] = sorted(expected["persons"], key=lambda p: str(p["uuid"]))
+
+        self.assertDictEqual(match, expected)
+
+        # TODO: Add test that disables repeatable read (for now you can comment out the code)
+
+
+class MatchPersonRecordsTestCase(TransactionTestCase):
+    mpi_engine: MPIEngineService
+    now: datetime
+    common_person_record: Mapping[str, Any]
+    config: Config
+    job: Job
+    person1: Person
+    person2: Person
+    person3: Person
+    person4: Person
+    person5: Person
+    person6: Person
+    person_record1: PersonRecord
+    person_record2: PersonRecord
+    person_record3: PersonRecord
+    person_record4: PersonRecord
+    person_record5: PersonRecord
+    person_record6: PersonRecord
+    match_group1: MatchGroup
+    match_group2: MatchGroup
+    result1: SplinkResult
+    result2: SplinkResult
+    result3: SplinkResult
+
+    def setUp(self) -> None:
+        self.maxDiff = None
+        self.mpi_engine = MPIEngineService()
+        self.now = django_tz.now()
+
+        self.config = Config.objects.create(
+            **{
+                "created": self.now,
+                "splink_settings": {"test": 1},
+                "potential_match_threshold": 1.0,
+                "auto_match_threshold": 1.1,
+            }
+        )
+        self.job = Job.objects.create(
+            s3_uri="s3://example/test",
+            config_id=self.config.id,
+            status="new",
+        )
+        self.common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "source_person_id": "a1",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person3 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person4 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person5 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person6 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        self.person_record1 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person1.id,
+            data_source="ds1",
+            first_name="John",
+            last_name="Doe",
+        )
+        self.person_record2 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="ds2",
+            first_name="Jane",
+            last_name="Smith",
+        )
+        self.person_record3 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person3.id,
+            data_source="ds3",
+            first_name="Paul",
+            last_name="Lap",
+        )
+        self.person_record4 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person4.id,
+            data_source="ds4",
+            first_name="Linda",
+            last_name="Love",
+        )
+        self.person_record5 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person5.id,
+            data_source="ds5",
+            first_name="Tina",
+            last_name="Smith",
+        )
+        self.person_record6 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person6.id,
+            data_source="ds6",
+            first_name="Tom",
+            last_name="Rom",
+        )
+
+        self.match_group1 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result1 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group1.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record1.id,
+            person_record_r_id=self.person_record2.id,
+            data={},
+        )
+        self.result2 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group1.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record3.id,
+            person_record_r_id=self.person_record4.id,
+            data={},
+        )
+
+        self.match_group2 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result3 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group2.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record5.id,
+            person_record_r_id=self.person_record6.id,
+            data={},
+        )
+
+    def assert_match_group_updates(
+        self,
+        original_match_group: MatchGroup,
+        updated_match_group: MatchGroup,
+        match_event: MatchEvent,
+    ) -> None:
+        """Assert that only the version, updated and matched fields change after a MatchGroup has been matched."""
+        self.assertTrue(isinstance(updated_match_group.updated, datetime))
+        self.assertEqual(updated_match_group.updated, match_event.created)
+        self.assertTrue(isinstance(updated_match_group.matched, datetime))
+        self.assertEqual(updated_match_group.matched, match_event.created)
+        self.assertEqual(updated_match_group.version, original_match_group.version + 1)
+
+        self.assertEqual(updated_match_group.uuid, original_match_group.uuid)
+        self.assertEqual(updated_match_group.created, original_match_group.created)
+        self.assertEqual(updated_match_group.deleted, original_match_group.deleted)
+        self.assertEqual(updated_match_group.deleted, None)
+        self.assertEqual(updated_match_group.job_id, original_match_group.job_id)
+
+    def assert_match_event_details(self, match_event: MatchEvent) -> None:
+        """Assert that a new MatchEvent related to a manual-match event has certain fields."""
+        self.assertTrue(isinstance(match_event.id, int))
+        self.assertTrue(
+            (django_tz.now() - timedelta(minutes=1))
+            < match_event.created
+            < django_tz.now()
+        )
+        self.assertEqual(match_event.job_id, None)
+        self.assertEqual(match_event.type, MatchEventType.manual_match)
+
+    def assert_person_action_ids(self) -> None:
+        """Assert that remove-record PersonAction IDs come before add-record PersonAction IDs."""
+        self.assertTrue(
+            max(
+                set(
+                    PersonAction.objects.filter(
+                        type=PersonActionType.remove_record
+                    ).values_list("id", flat=True)
+                )
+            )
+            < min(
+                set(
+                    PersonAction.objects.filter(
+                        type=PersonActionType.add_record
+                    ).values_list("id", flat=True)
+                )
+            )
+        )
+
+    def assert_match_group_action_details(
+        self, match_group: MatchGroup, match_event: MatchEvent
+    ) -> None:
+        """Assert that manual-match MatchGroupAction has certain fields."""
+        self.assertEqual(
+            MatchGroupAction.objects.filter(
+                match_event_id=match_event.id,
+                match_group_id=match_group.id,
+                splink_result=None,
+                type=MatchGroupActionType.match,
+                # FIXME: Should be external user ID
+                performed_by=None,
+            ).count(),
+            1,
+        )
+
+    def test_match_empty_updates(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        # Keep PersonRecords how they are
+        person_updates: list[PersonUpdateDict] = []
+
+        match_event = self.mpi_engine.match_person_records(
+            match["id"], match["version"], person_updates
+        )
+
+        #
+        # MatchGroup should no longer be a PotentialMatch
+        #
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # MatchGroup should be updated
+        #
+
+        match_group1 = MatchGroup.objects.get(id=self.match_group1.id)
+
+        self.assert_match_group_updates(self.match_group1, match_group1, match_event)
+
+        #
+        # No new Persons should have been added
+        #
+
+        self.assertEqual(Person.objects.count(), 6)
+
+        #
+        # Persons not involved should remain the same
+        #
+
+        for person in [
+            self.person1,
+            self.person2,
+            self.person3,
+            self.person4,
+            self.person5,
+            self.person6,
+        ]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=person.updated,
+                    job=person.job,
+                    version=person.version,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                person.id,
+            )
+
+        #
+        # No new PersonRecords should have been added
+        #
+
+        self.assertEqual(PersonRecord.objects.count(), 6)
+
+        #
+        # PersonRecords should remain the same
+        #
+
+        for record in [
+            self.person_record1,
+            self.person_record2,
+            self.person_record3,
+            self.person_record4,
+            self.person_record5,
+            self.person_record6,
+        ]:
+            self.assertEqual(
+                PersonRecord.objects.filter(
+                    id=record.id,
+                    person_id=record.person_id,
+                    person_updated=record.person_updated,
+                ).count(),
+                1,
+                record.id,
+            )
+
+        #
+        # There should only be a single MatchEvent
+        #
+
+        self.assertEqual(MatchEvent.objects.count(), 1)
+        self.assert_match_event_details(match_event)
+
+        #
+        # PersonActions related to returned MatchEvent, should have review type
+        # and person/record_id pairs are as expected
+        #
+
+        self.assertEqual(PersonAction.objects.count(), 4)
+
+        for person_id, person_record_id in [
+            (self.person1.id, self.person_record1.id),
+            (self.person2.id, self.person_record2.id),
+            (self.person3.id, self.person_record3.id),
+            (self.person4.id, self.person_record4.id),
+        ]:
+            self.assertEqual(
+                PersonAction.objects.filter(
+                    match_event_id=match_event.id,
+                    match_group_id=self.match_group1.id,
+                    person_id=person_id,
+                    person_record_id=person_record_id,
+                    type=PersonActionType.review,
+                    # FIXME: Should be external user ID
+                    performed_by=None,
+                ).count(),
+                1,
+                (person_id, person_record_id),
+            )
+
+        #
+        # There should be a single MatchGroupAction
+        #
+
+        self.assertEqual(MatchGroupAction.objects.count(), 1)
+        self.assert_match_group_action_details(self.match_group1, match_event)
+
+    def test_match_no_changes(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        # Keep PersonRecords how they are
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(person["uuid"]),
+                "version": person["version"],
+                "new_person_record_ids": [record["id"] for record in person["records"]],
+            }
+            for person in match["persons"]
+        ]
+
+        match_event = self.mpi_engine.match_person_records(
+            match["id"], match["version"], person_updates
+        )
+
+        #
+        # MatchGroup should no longer be a PotentialMatch
+        #
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # MatchGroup should be updated
+        #
+
+        match_group1 = MatchGroup.objects.get(id=self.match_group1.id)
+
+        self.assert_match_group_updates(self.match_group1, match_group1, match_event)
+
+        #
+        # No new Persons should have been added
+        #
+
+        self.assertEqual(Person.objects.count(), 6)
+
+        #
+        # Persons involved in match should have been updated
+        #
+
+        for person in [self.person1, self.person2, self.person3, self.person4]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=match_event.created,
+                    job=person.job,
+                    version=person.version + 1,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                person.id,
+            )
+
+        #
+        # Persons not involved should remain the same
+        #
+
+        for person in [self.person5, self.person6]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=person.updated,
+                    job=person.job,
+                    version=person.version,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                person.id,
+            )
+
+        #
+        # No new PersonRecords should have been added
+        #
+
+        self.assertEqual(PersonRecord.objects.count(), 6)
+
+        #
+        # PersonRecords should remain the same
+        #
+
+        for record in [
+            self.person_record1,
+            self.person_record2,
+            self.person_record3,
+            self.person_record4,
+            self.person_record5,
+            self.person_record6,
+        ]:
+            self.assertEqual(
+                PersonRecord.objects.filter(
+                    id=record.id,
+                    person_id=record.person_id,
+                    person_updated=record.person_updated,
+                ).count(),
+                1,
+                record.id,
+            )
+
+        #
+        # There should only be a single MatchEvent
+        #
+
+        self.assertEqual(MatchEvent.objects.count(), 1)
+        self.assert_match_event_details(match_event)
+
+        #
+        # PersonActions related to returned MatchEvent, should have review type
+        # and person/record_id pairs are as expected
+        #
+
+        self.assertEqual(PersonAction.objects.count(), 4)
+
+        for person_id, person_record_id in [
+            (self.person1.id, self.person_record1.id),
+            (self.person2.id, self.person_record2.id),
+            (self.person3.id, self.person_record3.id),
+            (self.person4.id, self.person_record4.id),
+        ]:
+            self.assertEqual(
+                PersonAction.objects.filter(
+                    match_event_id=match_event.id,
+                    match_group_id=self.match_group1.id,
+                    person_id=person_id,
+                    person_record_id=person_record_id,
+                    type=PersonActionType.review,
+                    # FIXME: Should be external user ID
+                    performed_by=None,
+                ).count(),
+                1,
+                (person_id, person_record_id),
+            )
+
+        #
+        # There should be a single MatchGroupAction
+        #
+
+        self.assertEqual(MatchGroupAction.objects.count(), 1)
+        self.assert_match_group_action_details(self.match_group1, match_event)
+
+    def test_match_changes(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        # Move person records around
+        person_updates: list[PersonUpdateDict] = [
+            # person1 keeps it's existing record and gets a new one
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record2.id,
+                ],
+            },
+            # person2 loses it's existing record and gets a new one
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [self.person_record3.id],
+            },
+            # person3 loses it's existing record
+            {
+                "uuid": str(self.person3.uuid),
+                "version": self.person3.version,
+                "new_person_record_ids": [],
+            },
+            # person4 doesn't change
+        ]
+
+        match_event = self.mpi_engine.match_person_records(
+            match["id"], match["version"], person_updates
+        )
+
+        #
+        # MatchGroup should no longer be a PotentialMatch
+        #
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # MatchGroup should be updated
+        #
+
+        match_group1 = MatchGroup.objects.get(id=self.match_group1.id)
+
+        self.assert_match_group_updates(self.match_group1, match_group1, match_event)
+
+        #
+        # No new Persons should have been added
+        #
+
+        self.assertEqual(Person.objects.count(), 6)
+
+        #
+        # Persons involved in match should have been updated
+        #
+
+        for person, record_count, updated, deleted in [
+            (self.person1, 2, match_event.created, None),
+            (self.person2, 1, match_event.created, None),
+            (self.person3, 0, match_event.created, match_event.created),
+        ]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=updated,
+                    job=person.job,
+                    version=person.version + 1,
+                    deleted=deleted,
+                    record_count=record_count,
+                ).count(),
+                1,
+                (person.id, record_count, list(Person.objects.values())),
+            )
+
+        #
+        # Persons not involved should remain the same
+        #
+
+        for person in [self.person4, self.person5, self.person6]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=person.updated,
+                    job=person.job,
+                    version=person.version,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                (person.id, list(Person.objects.values())),
+            )
+
+        #
+        # No new PersonRecords should have been added
+        #
+
+        self.assertEqual(PersonRecord.objects.count(), 6)
+
+        #
+        # PersonRecords should be updated
+        #
+
+        for record, person_id, person_updated in [
+            (self.person_record1, self.person1.id, self.person_record1.person_updated),
+            (self.person_record2, self.person1.id, match_event.created),
+            (self.person_record3, self.person2.id, match_event.created),
+            (self.person_record4, self.person4.id, self.person_record4.person_updated),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        ]:
+            self.assertEqual(
+                PersonRecord.objects.filter(
+                    id=record.id,
+                    person_id=person_id,
+                    person_updated=person_updated,
+                ).count(),
+                1,
+                (
+                    record.id,
+                    person_id,
+                    person_updated,
+                    list(PersonRecord.objects.values()),
+                ),
+            )
+
+        #
+        # There should only be a single MatchEvent
+        #
+
+        self.assertEqual(MatchEvent.objects.count(), 1)
+        self.assert_match_event_details(match_event)
+
+        #
+        # PersonActions related to returned MatchEvent, should have expected type
+        # and person/record_id pairs are as expected
+        #
+
+        # 2 review actions + 2 remove actions + 2 add actions
+        self.assertEqual(PersonAction.objects.count(), 2 + (2 * 2))
+
+        for person_id, person_record_id, type in [
+            (self.person1.id, self.person_record1.id, PersonActionType.review),
+            (self.person2.id, self.person_record2.id, PersonActionType.remove_record),
+            (self.person1.id, self.person_record2.id, PersonActionType.add_record),
+            (self.person3.id, self.person_record3.id, PersonActionType.remove_record),
+            (self.person2.id, self.person_record3.id, PersonActionType.add_record),
+            (self.person4.id, self.person_record4.id, PersonActionType.review),
+        ]:
+            self.assertEqual(
+                PersonAction.objects.filter(
+                    match_event_id=match_event.id,
+                    match_group_id=self.match_group1.id,
+                    person_id=person_id,
+                    person_record_id=person_record_id,
+                    type=type,
+                    # FIXME: Should be external user ID
+                    performed_by=None,
+                ).count(),
+                1,
+                (
+                    person_id,
+                    person_record_id,
+                    type,
+                    list(PersonAction.objects.values()),
+                ),
+            )
+
+        # Verify that IDs of removals are less than IDs of adds
+        self.assert_person_action_ids()
+
+        #
+        # There should be a single MatchGroupAction
+        #
+
+        self.assertEqual(MatchGroupAction.objects.count(), 1)
+        self.assert_match_group_action_details(self.match_group1, match_event)
+
+    def test_match_changes_merge(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        # Move person records around
+        person_updates: list[PersonUpdateDict] = [
+            # person1 gets all the records
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record2.id,
+                    self.person_record3.id,
+                    self.person_record4.id,
+                ],
+            },
+            # person2 gets all the records
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [],
+            },
+            # person3 gets all the records
+            {
+                "uuid": str(self.person3.uuid),
+                "version": self.person3.version,
+                "new_person_record_ids": [],
+            },
+            # person4 gets all the records
+            {
+                "uuid": str(self.person4.uuid),
+                "version": self.person4.version,
+                "new_person_record_ids": [],
+            },
+        ]
+
+        match_event = self.mpi_engine.match_person_records(
+            match["id"], match["version"], person_updates
+        )
+
+        #
+        # MatchGroup should no longer be a PotentialMatch
+        #
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # MatchGroup should be updated
+        #
+
+        match_group1 = MatchGroup.objects.get(id=self.match_group1.id)
+
+        self.assert_match_group_updates(self.match_group1, match_group1, match_event)
+
+        #
+        # No new Persons should have been added
+        #
+
+        self.assertEqual(Person.objects.count(), 6)
+
+        #
+        # Persons involved in match should have been updated
+        #
+
+        for person, record_count, updated, deleted in [
+            (self.person1, 4, match_event.created, None),
+            (self.person2, 0, match_event.created, match_event.created),
+            (self.person3, 0, match_event.created, match_event.created),
+            (self.person4, 0, match_event.created, match_event.created),
+        ]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=updated,
+                    job=person.job,
+                    version=person.version + 1,
+                    deleted=deleted,
+                    record_count=record_count,
+                ).count(),
+                1,
+                (person.id, record_count, list(Person.objects.values())),
+            )
+
+        #
+        # Persons not involved should remain the same
+        #
+
+        for person in [self.person5, self.person6]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=person.updated,
+                    job=person.job,
+                    version=person.version,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                (person.id, list(Person.objects.values())),
+            )
+
+        #
+        # No new PersonRecords should have been added
+        #
+
+        self.assertEqual(PersonRecord.objects.count(), 6)
+
+        #
+        # PersonRecords should be updated
+        #
+
+        for record, person_id, person_updated in [
+            (self.person_record1, self.person1.id, self.person_record1.person_updated),
+            (self.person_record2, self.person1.id, match_event.created),
+            (self.person_record3, self.person1.id, match_event.created),
+            (self.person_record4, self.person1.id, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        ]:
+            self.assertEqual(
+                PersonRecord.objects.filter(
+                    id=record.id,
+                    person_id=person_id,
+                    person_updated=person_updated,
+                ).count(),
+                1,
+                (
+                    record.id,
+                    person_id,
+                    person_updated,
+                    list(PersonRecord.objects.values()),
+                ),
+            )
+
+        #
+        # There should only be a single MatchEvent
+        #
+
+        self.assertEqual(MatchEvent.objects.count(), 1)
+        self.assert_match_event_details(match_event)
+
+        #
+        # PersonActions related to returned MatchEvent, should have expected type
+        # and person/record_id pairs are as expected
+        #
+
+        # 1 review action + 3 remove actions + 3 add actions
+        self.assertEqual(PersonAction.objects.count(), 1 + (3 * 2))
+
+        for person_id, person_record_id, type in [
+            (self.person1.id, self.person_record1.id, PersonActionType.review),
+            (self.person2.id, self.person_record2.id, PersonActionType.remove_record),
+            (self.person1.id, self.person_record2.id, PersonActionType.add_record),
+            (self.person3.id, self.person_record3.id, PersonActionType.remove_record),
+            (self.person1.id, self.person_record3.id, PersonActionType.add_record),
+            (self.person4.id, self.person_record4.id, PersonActionType.remove_record),
+            (self.person1.id, self.person_record4.id, PersonActionType.add_record),
+        ]:
+            self.assertEqual(
+                PersonAction.objects.filter(
+                    match_event_id=match_event.id,
+                    match_group_id=self.match_group1.id,
+                    person_id=person_id,
+                    person_record_id=person_record_id,
+                    type=type,
+                    # FIXME: Should be external user ID
+                    performed_by=None,
+                ).count(),
+                1,
+                (
+                    person_id,
+                    person_record_id,
+                    type,
+                    list(PersonAction.objects.values()),
+                ),
+            )
+
+        # Verify that IDs of removals are less than IDs of adds
+        self.assert_person_action_ids()
+
+        #
+        # There should be a single MatchGroupAction
+        #
+
+        self.assertEqual(MatchGroupAction.objects.count(), 1)
+        self.assert_match_group_action_details(self.match_group1, match_event)
+
+    def test_match_changes_linked_records(self) -> None:
+        person_record7 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person1.id,
+            data_source="ds7",
+            first_name="Jerry",
+            last_name="Berry",
+        )
+        person_record8 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="ds8",
+            first_name="Larry",
+            last_name="Dairy",
+        )
+        person_record9 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person3.id,
+            data_source="ds9",
+            first_name="Simone",
+            last_name="Limone",
+        )
+        person_record10 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person4.id,
+            data_source="ds10",
+            first_name="Stacy",
+            last_name="Lacy",
+        )
+
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        # Move person records around
+        person_updates: list[PersonUpdateDict] = [
+            # person1 keeps one of it's records and gets both records from person2
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [
+                    self.person_record2.id,
+                    person_record7.id,
+                    person_record8.id,
+                ],
+            },
+            # person2 loses both of its existing records and gets both records from person3
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [
+                    self.person_record3.id,
+                    person_record9.id,
+                ],
+            },
+            # person3 loses both of it's existing records and gets one from person1
+            {
+                "uuid": str(self.person3.uuid),
+                "version": self.person3.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            # person4 doesn't change
+        ]
+
+        match_event = self.mpi_engine.match_person_records(
+            match["id"], match["version"], person_updates
+        )
+
+        #
+        # MatchGroup should no longer be a PotentialMatch
+        #
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # MatchGroup should be updated
+        #
+
+        match_group1 = MatchGroup.objects.get(id=self.match_group1.id)
+
+        self.assert_match_group_updates(self.match_group1, match_group1, match_event)
+
+        #
+        # No new Persons should have been added
+        #
+
+        self.assertEqual(Person.objects.count(), 6)
+
+        #
+        # Persons involved in match should have been updated
+        #
+
+        for person, record_count, updated, deleted in [
+            (self.person1, 3, match_event.created, None),
+            (self.person2, 2, match_event.created, None),
+            (self.person3, 1, match_event.created, None),
+        ]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=updated,
+                    job=person.job,
+                    version=person.version + 1,
+                    deleted=deleted,
+                    record_count=record_count,
+                ).count(),
+                1,
+                (person.id, record_count, list(Person.objects.values())),
+            )
+
+        #
+        # Persons not involved should remain the same
+        #
+
+        for person in [self.person4, self.person5, self.person6]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=person.updated,
+                    job=person.job,
+                    version=person.version,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                (person.id, list(Person.objects.values())),
+            )
+
+        #
+        # No new PersonRecords should have been added
+        #
+
+        self.assertEqual(PersonRecord.objects.count(), 10)
+
+        #
+        # PersonRecords should be updated
+        #
+
+        for record, person_id, person_updated in [
+            # person1
+            (self.person_record2, self.person1.id, match_event.created),
+            (person_record7, self.person1.id, person_record7.person_updated),
+            (person_record8, self.person1.id, match_event.created),
+            # person2
+            (self.person_record3, self.person2.id, match_event.created),
+            (person_record9, self.person2.id, match_event.created),
+            # person3
+            (self.person_record1, self.person3.id, match_event.created),
+            # person4
+            (self.person_record4, self.person4.id, self.person_record4.person_updated),
+            (person_record10, self.person4.id, person_record10.person_updated),
+            # person 5
+            (self.person_record5, self.person5.id, self.person_record5.person_updated),
+            # person 6
+            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        ]:
+            self.assertEqual(
+                PersonRecord.objects.filter(
+                    id=record.id,
+                    person_id=person_id,
+                    person_updated=person_updated,
+                ).count(),
+                1,
+                (
+                    record.id,
+                    person_id,
+                    person_updated,
+                    list(PersonRecord.objects.values()),
+                ),
+            )
+
+        #
+        # There should only be a single MatchEvent
+        #
+
+        self.assertEqual(MatchEvent.objects.count(), 1)
+        self.assert_match_event_details(match_event)
+
+        #
+        # PersonActions related to returned MatchEvent, should have expected type
+        # and person/record_id pairs are as expected
+        #
+
+        # 3 review actions + 5 remove actions + 5 add actions
+        self.assertEqual(PersonAction.objects.count(), 3 + (5 * 2))
+
+        for person_id, person_record_id, type in [
+            # person1
+            (self.person1.id, person_record7.id, PersonActionType.review),
+            (self.person2.id, self.person_record2.id, PersonActionType.remove_record),
+            (self.person1.id, self.person_record2.id, PersonActionType.add_record),
+            (self.person2.id, person_record8.id, PersonActionType.remove_record),
+            (self.person1.id, person_record8.id, PersonActionType.add_record),
+            # person2
+            (self.person3.id, self.person_record3.id, PersonActionType.remove_record),
+            (self.person2.id, self.person_record3.id, PersonActionType.add_record),
+            (self.person3.id, person_record9.id, PersonActionType.remove_record),
+            (self.person2.id, person_record9.id, PersonActionType.add_record),
+            # person3
+            (self.person1.id, self.person_record1.id, PersonActionType.remove_record),
+            (self.person3.id, self.person_record1.id, PersonActionType.add_record),
+            # person4
+            (self.person4.id, self.person_record4.id, PersonActionType.review),
+            (self.person4.id, person_record10.id, PersonActionType.review),
+        ]:
+            self.assertEqual(
+                PersonAction.objects.filter(
+                    match_event_id=match_event.id,
+                    match_group_id=self.match_group1.id,
+                    person_id=person_id,
+                    person_record_id=person_record_id,
+                    type=type,
+                    # FIXME: Should be external user ID
+                    performed_by=None,
+                ).count(),
+                1,
+                (
+                    person_id,
+                    person_record_id,
+                    type,
+                    list(PersonAction.objects.values()),
+                ),
+            )
+
+        # Verify that IDs of removals are less than IDs of adds
+        self.assert_person_action_ids()
+
+        #
+        # There should be a single MatchGroupAction
+        #
+
+        self.assertEqual(MatchGroupAction.objects.count(), 1)
+        self.assert_match_group_action_details(self.match_group1, match_event)
+
+    def test_match_new_persons(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        # Move person records around
+        person_updates: list[PersonUpdateDict] = [
+            # person1 keeps it's existing record and gets a new one
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record2.id,
+                ],
+            },
+            # person2 loses it's existing record
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [],
+            },
+            # new person
+            {
+                "new_person_record_ids": [self.person_record3.id],
+            },
+            # person3 loses it's existing record
+            {
+                "uuid": str(self.person3.uuid),
+                "version": self.person3.version,
+                "new_person_record_ids": [],
+            },
+            # new person
+            {
+                "new_person_record_ids": [self.person_record4.id],
+            },
+            # person4 loses it's existing record
+            {
+                "uuid": str(self.person4.uuid),
+                "version": self.person4.version,
+                "new_person_record_ids": [],
+            },
+        ]
+
+        match_event = self.mpi_engine.match_person_records(
+            match["id"], match["version"], person_updates
+        )
+
+        #
+        # MatchGroup should no longer be a PotentialMatch
+        #
+
+        with self.assertRaises(MatchGroup.DoesNotExist):
+            self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # MatchGroup should be updated
+        #
+
+        match_group1 = MatchGroup.objects.get(id=self.match_group1.id)
+
+        self.assert_match_group_updates(self.match_group1, match_group1, match_event)
+
+        #
+        # New Persons should have been added
+        #
+
+        self.assertEqual(Person.objects.count(), 8)
+
+        #
+        # Existing persons involved in match should have been updated
+        #
+
+        for person, record_count, updated, deleted in [
+            (self.person1, 2, match_event.created, None),
+            (self.person2, 0, match_event.created, match_event.created),
+            (self.person3, 0, match_event.created, match_event.created),
+            (self.person4, 0, match_event.created, match_event.created),
+        ]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=updated,
+                    job=person.job,
+                    version=person.version + 1,
+                    deleted=deleted,
+                    record_count=record_count,
+                ).count(),
+                1,
+                (person.id, record_count, list(Person.objects.values())),
+            )
+
+        #
+        # Existing persons not involved should remain the same
+        #
+
+        for person in [self.person5, self.person6]:
+            self.assertEqual(
+                Person.objects.filter(
+                    id=person.id,
+                    uuid=person.uuid,
+                    created=person.created,
+                    updated=person.updated,
+                    job=person.job,
+                    version=person.version,
+                    deleted=None,
+                    record_count=person.record_count,
+                ).count(),
+                1,
+                (person.id, list(Person.objects.values())),
+            )
+
+        #
+        # New persons should have been added
+        #
+
+        new_persons = list(
+            Person.objects.filter(
+                created=match_event.created,
+                updated=match_event.created,
+                job=None,
+                version=1,
+                deleted=None,
+                record_count=1,
+            ).order_by("id")
+        )
+
+        self.assertTrue(len(new_persons), 2)
+
+        for person in new_persons:
+            self.assertTrue(isinstance(person.id, int))
+            self.assertTrue(
+                person.id
+                not in {
+                    self.person1.id,
+                    self.person2.id,
+                    self.person3.id,
+                    self.person4.id,
+                    self.person5.id,
+                    self.person6.id,
+                }
+            )
+            self.assertTrue(isinstance(person.uuid, uuid.UUID))
+
+        #
+        # No new PersonRecords should have been added
+        #
+
+        self.assertEqual(PersonRecord.objects.count(), 6)
+
+        #
+        # PersonRecords should be updated
+        #
+
+        for record, person_id, person_updated in [
+            (self.person_record1, self.person1.id, self.person_record1.person_updated),
+            (self.person_record2, self.person1.id, match_event.created),
+            (self.person_record3, new_persons[0].id, match_event.created),
+            (self.person_record4, new_persons[1].id, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        ]:
+            self.assertEqual(
+                PersonRecord.objects.filter(
+                    id=record.id,
+                    person_id=person_id,
+                    person_updated=person_updated,
+                ).count(),
+                1,
+                (
+                    record.id,
+                    person_id,
+                    person_updated,
+                    list(PersonRecord.objects.values()),
+                ),
+            )
+
+        #
+        # There should only be a single MatchEvent
+        #
+
+        self.assertEqual(MatchEvent.objects.count(), 1)
+        self.assert_match_event_details(match_event)
+
+        #
+        # PersonActions related to returned MatchEvent, should have expected type
+        # and person/record_id pairs are as expected
+        #
+
+        # 1 review actions + 3 remove actions + 3 add actions
+        self.assertEqual(PersonAction.objects.count(), 1 + (3 * 2))
+
+        for person_id, person_record_id, type in [
+            (self.person1.id, self.person_record1.id, PersonActionType.review),
+            (self.person2.id, self.person_record2.id, PersonActionType.remove_record),
+            (self.person1.id, self.person_record2.id, PersonActionType.add_record),
+            (self.person3.id, self.person_record3.id, PersonActionType.remove_record),
+            (new_persons[0].id, self.person_record3.id, PersonActionType.add_record),
+            (self.person4.id, self.person_record4.id, PersonActionType.remove_record),
+            (new_persons[1].id, self.person_record4.id, PersonActionType.add_record),
+        ]:
+            self.assertEqual(
+                PersonAction.objects.filter(
+                    match_event_id=match_event.id,
+                    match_group_id=self.match_group1.id,
+                    person_id=person_id,
+                    person_record_id=person_record_id,
+                    type=type,
+                    # FIXME: Should be external user ID
+                    performed_by=None,
+                ).count(),
+                1,
+                (
+                    person_id,
+                    person_record_id,
+                    type,
+                    list(PersonAction.objects.values()),
+                ),
+            )
+
+        # Verify that IDs of removals are less than IDs of adds
+        self.assert_person_action_ids()
+
+        #
+        # There should be a single MatchGroupAction
+        #
+
+        self.assertEqual(MatchGroupAction.objects.count(), 1)
+        self.assert_match_group_action_details(self.match_group1, match_event)
+
+    def test_validation_existing_person_fields(self) -> None:
+        """A PersonUpdate for an existing Person should specify a version."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": "1",
+                "new_person_record_ids": [],
+            },
+        ]
+
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "A PersonUpdate for an existing Person should specify a version",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_new_person_fields(self) -> None:
+        """A PersonUpdate for a new Person should not specify a version."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "version": 1,
+                "new_person_record_ids": [],
+            },
+        ]
+
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "A PersonUpdate for a new Person should not specify a version",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_new_person_missing_records(self) -> None:
+        """Check that if it's a new Person it also has 1 or more records."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "new_person_record_ids": [],
+            },
+        ]
+
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "A PersonUpdate for a new Person should have 1 or more new_record_ids",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_same_person_dupe(self) -> None:
+        """A PersonRecord ID cannot exist twice in the same PersonUpdate."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [],
+            },
+            {
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record1.id,
+                ],
+            },
+        ]
+
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            (
+                "A PersonRecord ID cannot exist twice in the same PersonUpdate."
+                f" PersonRecord {self.person_record1.id} exists in update for Person index 1 twice."
+            ),
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+        person_updates = [
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record1.id,
+                ],
+            },
+        ]
+
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            (
+                "A PersonRecord ID cannot exist twice in the same PersonUpdate."
+                f" PersonRecord {self.person_record1.id} exists in update for Person {self.person2.uuid} twice."
+            ),
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_other_person_dupe(self) -> None:
+        """A PersonRecord ID cannot exist in more than PersonUpdate."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        #
+        # Duplicate in two new Persons
+        #
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [],
+            },
+            {
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "new_person_record_ids": [self.person_record1.id],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            (
+                "A PersonRecord ID cannot exist in more than PersonUpdate."
+                f" PersonRecord {self.person_record1.id} exists in updates for Person index 1 and Person index 2."
+            ),
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+        #
+        # Duplicate in two existing Persons
+        #
+
+        person_updates = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "new_person_record_ids": [self.person_record2.id],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            (
+                "A PersonRecord ID cannot exist in more than PersonUpdate."
+                f" PersonRecord {self.person_record1.id} exists in updates for Person {self.person1.uuid} and Person {self.person2.uuid}."
+            ),
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+        #
+        # Duplicate in two existing Persons and a new Person
+        #
+
+        person_updates = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            # Third update references person_record1
+            {
+                "new_person_record_ids": [self.person_record1.id],
+            },
+        ]
+        # But we get the same message
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            (
+                "A PersonRecord ID cannot exist in more than PersonUpdate."
+                f" PersonRecord {self.person_record1.id} exists in updates for Person {self.person1.uuid} and Person {self.person2.uuid}."
+            ),
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+        #
+        # Duplicate in an existing Person and a new Person
+        #
+
+        person_updates = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "new_person_record_ids": [self.person_record1.id],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            (
+                "A PersonRecord ID cannot exist in more than PersonUpdate."
+                f" PersonRecord {self.person_record1.id} exists in updates for Person {self.person1.uuid} and Person index 1."
+            ),
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_person_dupe(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "new_person_record_ids": [self.person_record1.id],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "The same Person UUID cannot exist in more than one PersonUpdate",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_potential_match_dne(self) -> None:
+        with self.assertRaisesMessage(
+            MatchGroup.DoesNotExist, "Potential match does not exist"
+        ):
+            self.mpi_engine.match_person_records(12345, 1, [])
+
+    def test_validation_potential_match_deleted(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        self.match_group1.deleted = django_tz.now()
+        self.match_group1.save()
+
+        with self.assertRaisesMessage(
+            MatchGroup.DoesNotExist, "Potential match has been replaced"
+        ):
+            self.mpi_engine.match_person_records(match["id"], match["version"], [])
+
+    def test_validation_potential_match_matched(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        self.match_group1.matched = django_tz.now()
+        self.match_group1.save()
+
+        with self.assertRaisesMessage(
+            InvalidPotentialMatch, "Potential has already been matched"
+        ):
+            self.mpi_engine.match_person_records(match["id"], match["version"], [])
+
+    def test_validation_potential_match_version(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        self.match_group1.version = self.match_group1.version + 1
+        self.match_group1.save()
+
+        with self.assertRaisesMessage(
+            InvalidPotentialMatch, "Potential match version is outdated"
+        ):
+            self.mpi_engine.match_person_records(match["id"], match["version"], [])
+
+    def test_validation_person_version_outdated(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                # incorrect version
+                "version": self.person1.version + 1,
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record2.id,
+                ],
+            },
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                "new_person_record_ids": [],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate, "Invalid Person UUID or version outdated"
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_related_records(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                # Referencing person_record5
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record5.id,
+                ],
+            },
+            # person5/person_record5 is connected with match_group2, not match_group1
+            {
+                "uuid": str(self.person5.uuid),
+                "version": self.person5.version,
+                "new_person_record_ids": [],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "PersonRecord IDs specified in new_person_record_ids must be related to PotentialMatch",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_dne_records(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id, 12345],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "PersonRecord IDs specified in new_person_record_ids must be related to PotentialMatch",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_related_persons(self) -> None:
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            # person5 is connected with match_group2, not match_group1
+            {
+                "uuid": str(self.person5.uuid),
+                "version": self.person5.version,
+                "new_person_record_ids": [self.person_record5.id],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "Specified Person UUID must be related to PotentialMatch",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+    def test_validation_corresponding_add_remove(self) -> None:
+        """Check that if a record_id currently exists in a Person and is not in the corresponding person_update, it exists in another person_update."""
+        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+
+        person_updates: list[PersonUpdateDict] = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                # person_record2 is added here, but not removed from person2
+                "new_person_record_ids": [
+                    self.person_record1.id,
+                    self.person_record2.id,
+                ],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "PersonRecord IDs that are added to a Person, must be removed from another Person",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+        person_updates = [
+            {
+                "uuid": str(self.person1.uuid),
+                "version": self.person1.version,
+                "new_person_record_ids": [self.person_record1.id],
+            },
+            {
+                "uuid": str(self.person2.uuid),
+                "version": self.person2.version,
+                # person_record2 is removed here, but not added to another Person
+                "new_person_record_ids": [],
+            },
+        ]
+        with self.assertRaisesMessage(
+            InvalidPersonUpdate,
+            "PersonRecord IDs that are removed from a Person, must be added to another Person",
+        ):
+            self.mpi_engine.match_person_records(
+                match["id"], match["version"], person_updates
+            )
+
+
+class PersonsTestCase(TransactionTestCase):
+    mpi_engine: MPIEngineService
+    now: datetime
+    common_person_record: Mapping[str, Any]
+    config: Config
+    job: Job
+    person1: Person
+    person2: Person
+    person3: Person
+    person4: Person
+
+    def setUp(self) -> None:
+        self.maxDiff = None
+        self.mpi_engine = MPIEngineService()
+        self.now = django_tz.now()
+
+        self.config = Config.objects.create(
+            **{
+                "created": self.now,
+                "splink_settings": {"test": 1},
+                "potential_match_threshold": 1.0,
+                "auto_match_threshold": 1.1,
+            }
+        )
+        self.job = Job.objects.create(
+            s3_uri="s3://example/test",
+            config_id=self.config.id,
+            status="new",
+        )
+        self.common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "source_person_id": "a1",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person3 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person1.id,
+            data_source="ds1",
+            first_name="John",
+            last_name="Doe",
+        )
+        # The following two records are both associated with person2
+        PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="ds2",
+            first_name="Jane",
+            last_name="Lane",
+        )
+        PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="ds3",
+            first_name="Paul",
+            last_name="Lap",
+        )
+        PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person3.id,
+            data_source="ds4",
+            first_name="Linda",
+            last_name="Love",
+        )
+
+    #
+    # get_persons
+    #
+
+    def test_get_all_persons(self) -> None:
+        """Tests returns all persons by default."""
+        matches = self.mpi_engine.get_persons(
+            first_name="",
+            last_name="",
+            birth_date="",
+            person_id="",
+            source_person_id="",
+            data_source="",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons()
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_by_first_name(self) -> None:
+        """Tests searching by first name (case-insensitive)."""
+        matches = self.mpi_engine.get_persons(
+            first_name="john",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons(
+            first_name="ohn",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_by_last_name(self) -> None:
+        """Tests searching by last name (case-insensitive)."""
+        matches = self.mpi_engine.get_persons(
+            last_name="love",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons(
+            last_name="lo",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons(
+            last_name="ane",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        # Paul Lap is connected with Person2, but we still use the first record's first/last name
+        matches = self.mpi_engine.get_persons(
+            last_name="lap",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_by_birth_date(self) -> None:
+        """Tests searching by birth date."""
+        matches = self.mpi_engine.get_persons(
+            birth_date="1900-01-01",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons(
+            birth_date="1900",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_by_person_id(self) -> None:
+        """Tests searching by person ID."""
+        matches = self.mpi_engine.get_persons(
+            person_id=str(self.person1.uuid),
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons(
+            # Testing a prefix search of person_id
+            person_id=str(self.person3.uuid)[:20],
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_by_source_person_id(self) -> None:
+        """Tests searching by source person ID."""
+        matches = self.mpi_engine.get_persons(
+            source_person_id="a2",
+        )
+        self.assertEqual(matches, [])
+
+        matches = self.mpi_engine.get_persons(
+            source_person_id="a1",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person2.uuid),
+                first_name="Jane",
+                last_name="Lane",
+                data_sources=["ds2", "ds3"],
+            ),
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_by_data_source(self) -> None:
+        """Tests searching by data source."""
+        matches = self.mpi_engine.get_persons(
+            data_source="ds1",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+        matches = self.mpi_engine.get_persons(
+            data_source="ds4",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person3.uuid),
+                first_name="Linda",
+                last_name="Love",
+                data_sources=["ds4"],
+            ),
+        ]
+        self.assertEqual(matches, expected)
+
+    def test_get_persons_no_results(self) -> None:
+        """Tests when no persons are found."""
+        matches = self.mpi_engine.get_persons(
+            first_name="Nonexistent",
+        )
+
+        self.assertEqual(matches, [])
+
+    def test_get_persons_deleted(self) -> None:
+        """Tests does not return deleted Persons."""
+        matches = self.mpi_engine.get_persons(
+            first_name="john",
+        )
+        expected = [
+            PersonSummaryDict(
+                uuid=str(self.person1.uuid),
+                first_name="John",
+                last_name="Doe",
+                data_sources=["ds1"],
+            )
+        ]
+        self.assertEqual(matches, expected)
+
+        self.person1.deleted = self.now
+        self.person1.save()
+
+        matches = self.mpi_engine.get_persons(
+            first_name="john",
+        )
+        self.assertEqual(matches, [])
+
+    #
+    # get_person
+    #
+
+    def test_get_person(self) -> None:
+        """Tests returns person."""
+        person = self.mpi_engine.get_person(str(self.person1.uuid))
+        expected = PersonDict(
+            uuid=str(self.person1.uuid),
+            created=self.person1.created,
+            version=self.person1.version,
+            records=[
+                cast(
+                    PersonRecordDict,
+                    {
+                        **select_keys(
+                            record,
+                            record.keys() - {"job_id", "sha256", "person_id"},
+                        ),
+                        "created": record["created"].isoformat(),
+                        "person_uuid": str(self.person1.uuid),
+                        "person_updated": record["person_updated"].isoformat(),
+                    },
+                )
+                for record in PersonRecord.objects.filter(
+                    person_id=self.person1.id
+                ).values()
+            ],
+        )
+
+        person["records"] = sorted(person["records"], key=lambda r: str(r["id"]))
+        expected["records"] = sorted(expected["records"], key=lambda r: str(r["id"]))
+
+        self.assertDictEqual(person, expected)
+        self.assertEqual(
+            {record["first_name"] for record in person["records"]},
+            {"John"},
+        )
+
+        person = self.mpi_engine.get_person(str(self.person2.uuid))
+        expected = PersonDict(
+            uuid=str(self.person2.uuid),
+            created=self.person2.created,
+            version=self.person2.version,
+            records=[
+                cast(
+                    PersonRecordDict,
+                    {
+                        **select_keys(
+                            record,
+                            record.keys() - {"job_id", "sha256", "person_id"},
+                        ),
+                        "created": record["created"].isoformat(),
+                        "person_uuid": str(self.person2.uuid),
+                        "person_updated": record["person_updated"].isoformat(),
+                    },
+                )
+                for record in PersonRecord.objects.filter(
+                    person_id=self.person2.id
+                ).values()
+            ],
+        )
+
+        person["records"] = sorted(person["records"], key=lambda r: str(r["id"]))
+        expected["records"] = sorted(expected["records"], key=lambda r: str(r["id"]))
+
+        self.assertDictEqual(person, expected)
+        self.assertEqual(
+            {record["first_name"] for record in person["records"]},
+            {"Jane", "Paul"},
+        )
+
+    def test_get_person_missing(self) -> None:
+        """Tests throws error when person is missing."""
+        with self.assertRaises(Person.DoesNotExist):
+            self.mpi_engine.get_person(str(uuid.uuid4()))
+
+    def test_get_person_deleted(self) -> None:
+        person = self.mpi_engine.get_person(str(self.person1.uuid))
+        expected = PersonDict(
+            uuid=str(self.person1.uuid),
+            created=self.person1.created,
+            version=self.person1.version,
+            records=[
+                cast(
+                    PersonRecordDict,
+                    {
+                        **select_keys(
+                            record,
+                            record.keys() - {"job_id", "sha256", "person_id"},
+                        ),
+                        "created": record["created"].isoformat(),
+                        "person_uuid": str(self.person1.uuid),
+                        "person_updated": record["person_updated"].isoformat(),
+                    },
+                )
+                for record in PersonRecord.objects.filter(
+                    person_id=self.person1.id
+                ).values()
+            ],
+        )
+
+        person["records"] = sorted(person["records"], key=lambda r: str(r["id"]))
+        expected["records"] = sorted(expected["records"], key=lambda r: str(r["id"]))
+
+        self.assertDictEqual(person, expected)
+        self.assertEqual(
+            {record["first_name"] for record in person["records"]},
+            {"John"},
+        )
+
+        self.person1.deleted = self.now
+        self.person1.save()
+
+        with self.assertRaises(Person.DoesNotExist):
+            self.mpi_engine.get_person(str(self.person1.uuid))

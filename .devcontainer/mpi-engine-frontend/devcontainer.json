@@ -1,0 +1,16 @@
+{
+    "name": "MPI Engine frontend dev container",
+    "dockerComposeFile": ["../docker-compose.yml"],
+    "service": "mpi-engine-frontend",
+    "shutdownAction": "none",
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "files.insertFinalNewline": true,
+                "files.trimTrailingWhitespace": true
+            },
+            "extensions": []
+        }
+    }
+}

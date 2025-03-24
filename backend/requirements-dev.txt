@@ -1,0 +1,7 @@
+coverage==7.6.9
+djangorestframework-stubs[compatible-mypy]==3.15.2
+django-stubs[compatible-mypy]==5.1.1
+httpie==3.2.4
+mypy==1.12.0
+pandas-stubs==2.2.3.241126
+ruff==0.7.3

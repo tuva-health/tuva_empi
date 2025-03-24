@@ -1,0 +1,13 @@
+{
+    "env": "local",
+    "db": {
+        "user": "mpi_engine",
+        "password": "mpi_engine",
+        "host": "db",
+        "port": "5432"
+    },
+    "django": {
+        "debug": false,
+        "secret_key": "django-insecure-$@j@kbe1r&e!g*%kz(#mwje1z+6$fs24m6h4rukhkmsi))l8vg"
+    }
+}

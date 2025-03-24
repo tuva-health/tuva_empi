@@ -1,0 +1,2 @@
+data_source,source_person_id,first_name,last_name,sex,race,birth_date,death_date,social_security_number,address,city,state,zip_code,county,phone
+"example-ds","a1","test-first-name","test-last-name","F","test-race","1900-01-01","3000-01-01","000-00-0000","1 Test Address","Test City","AA","00000","Test County"

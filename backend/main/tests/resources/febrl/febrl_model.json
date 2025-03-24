@@ -1,0 +1,183 @@
+{
+    "link_type": "dedupe_only",
+    "comparisons": [
+        {
+            "output_column_name": "first_name",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"first_name_l\" IS NULL OR \"first_name_r\" IS NULL",
+                    "label_for_charts": "Null",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"first_name_l\" = \"first_name_r\"",
+                    "label_for_charts": "Exact match first_name",
+                    "m_probability": 0.3008544693237345,
+                    "u_probability": 0.0015103890272278237,
+                    "tf_adjustment_column": "first_name",
+                    "tf_adjustment_weight": 1.0
+                },
+                {
+                    "sql_condition": "damerau_levenshtein(\"first_name_l\", \"first_name_r\") <= 1",
+                    "label_for_charts": "Damerau_levenshtein <= 1",
+                    "m_probability": 0.4722285295081074,
+                    "u_probability": 0.002451612150758985
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.9",
+                    "label_for_charts": "Jaro_winkler_similarity >= 0.9",
+                    "m_probability": 0.046107597770330556,
+                    "u_probability": 0.0007441144396689973
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.8",
+                    "label_for_charts": "Jaro_winkler_similarity >= 0.8",
+                    "m_probability": 0.06737019949836355,
+                    "u_probability": 0.004520670169525131
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.11343920389946391,
+                    "u_probability": 0.990773214212819
+                }
+            ],
+            "comparison_description": "Exact match vs. Given_Name within levenshtein threshold 1 vs. Given_Name within damerau-levenshtein threshold 1 vs. Given_Name within jaro_winkler thresholds 0.9, 0.8 vs. anything else"
+        },
+        {
+            "output_column_name": "last_name",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"last_name_l\" IS NULL OR \"last_name_r\" IS NULL",
+                    "label_for_charts": "Null",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"last_name_l\" = \"last_name_r\"",
+                    "label_for_charts": "Exact match last_name",
+                    "m_probability": 0.3809387749404263,
+                    "u_probability": 0.0002249637070269523,
+                    "tf_adjustment_column": "last_name",
+                    "tf_adjustment_weight": 1.0
+                },
+                {
+                    "sql_condition": "damerau_levenshtein(\"last_name_l\", \"last_name_r\") <= 1",
+                    "label_for_charts": "Damerau_levenshtein <= 1",
+                    "m_probability": 0.46248034362752083,
+                    "u_probability": 0.000504996654836544
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"last_name_l\", \"last_name_r\") >= 0.9",
+                    "label_for_charts": "Jaro_winkler_similarity >= 0.9",
+                    "m_probability": 0.04002762291479388,
+                    "u_probability": 0.0001523191766328323
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"last_name_l\", \"last_name_r\") >= 0.8",
+                    "label_for_charts": "Jaro_winkler_similarity >= 0.8",
+                    "m_probability": 0.02859165868449205,
+                    "u_probability": 0.002273070789751497
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.087961599832767,
+                    "u_probability": 0.9968446496717521
+                }
+            ],
+            "comparison_description": "Exact match vs. Surname within levenshtein threshold 1 vs. Surname within damerau-levenshtein threshold 1 vs. Surname within jaro_winkler thresholds 0.9, 0.8 vs. anything else"
+        },
+        {
+            "output_column_name": "birth_date",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"birth_date_l\" IS NULL OR \"birth_date_r\" IS NULL",
+                    "label_for_charts": "Null",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"birth_date_l\" = \"birth_date_r\"",
+                    "label_for_charts": "Exact match",
+                    "m_probability": 0.4849580861794529,
+                    "u_probability": 0.00011232217455729943
+                },
+                {
+                    "sql_condition": "levenshtein(\"birth_date_l\", \"birth_date_r\") <= 2",
+                    "label_for_charts": "Levenshtein <= 2",
+                    "m_probability": 0.47390572799559755,
+                    "u_probability": 0.020776722237342515
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.04113618582494944,
+                    "u_probability": 0.9791109555881002
+                }
+            ],
+            "comparison_description": "Exact match vs. Date_Of_Birth within levenshtein threshold 2 vs. anything else"
+        },
+        {
+            "output_column_name": "city",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"city_l\" IS NULL OR \"city_r\" IS NULL",
+                    "label_for_charts": "Null",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"city_l\" = \"city_r\"",
+                    "label_for_charts": "Exact match",
+                    "m_probability": 0.39342185844168187,
+                    "u_probability": 0.00012988234451067945,
+                    "tf_adjustment_column": "city",
+                    "tf_adjustment_weight": 1.0
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.6065781415583181,
+                    "u_probability": 0.9998701176554893
+                }
+            ],
+            "comparison_description": "Exact match vs. anything else"
+        },
+        {
+            "output_column_name": "zip_code",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"zip_code_l\" IS NULL OR \"zip_code_r\" IS NULL",
+                    "label_for_charts": "Null",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"zip_code_l\" = \"zip_code_r\"",
+                    "label_for_charts": "Exact match",
+                    "m_probability": 0.49040910881844246,
+                    "u_probability": 0.000849055638718301
+                },
+                {
+                    "sql_condition": "levenshtein(\"zip_code_l\", \"zip_code_r\") <= 1",
+                    "label_for_charts": "Levenshtein <= 1",
+                    "m_probability": 0.185524876527899,
+                    "u_probability": 0.010900192202554896
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.3240660146536586,
+                    "u_probability": 0.9882507521587268
+                }
+            ],
+            "comparison_description": "Exact match vs. Postcode within levenshtein threshold 1 vs. anything else"
+        }
+    ],
+    "blocking_rules_to_generate_predictions": [
+        {
+            "blocking_rule": "l.\"first_name\" = r.\"first_name\" and l.\"last_name\" = r.\"last_name\""
+        },
+        {
+            "blocking_rule": "l.\"last_name\" = r.\"last_name\" and l.\"birth_date\" = r.\"birth_date\""
+        }
+    ],
+    "probability_two_random_records_match": 0.0001059258624322751
+}

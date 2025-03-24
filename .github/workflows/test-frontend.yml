@@ -1,0 +1,34 @@
+name: Test Frontend
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.11.0'
+
+      - name: Install
+        run: |
+          npm install
+          npx next telemetry status
+
+      - name: Build and lint
+        run: |
+          npm run build
+          npx prettier . --check

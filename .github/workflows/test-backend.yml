@@ -1,0 +1,57 @@
+name: Test Backend
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        # postgres:17
+        # https://hub.docker.com/layers/library/postgres/17/images/sha256-719d50f0df30ec51e85b11e858fe6002e35b89c9bcbeb630a5d7c04fc87d66b0?context=explore
+        image: postgres:17@sha256:f176fef320ed02c347e9f85352620945547a9a23038f02b57cf7939a198182ae
+        env:
+          POSTGRES_USER: mpi_engine
+          POSTGRES_PASSWORD: mpi_engine
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      CONFIG_FILE: config/ci.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install
+        run: |
+          make install-all
+
+      - name: Lint
+        run: |
+          make lint
+
+      - name: Test
+        run: |
+          make test
+
+      - name: Code coverage
+        run: |
+          make report

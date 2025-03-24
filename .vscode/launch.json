@@ -1,0 +1,59 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Engine API",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/backend/manage.py",
+            "args": [
+                "runserver",
+                "0.0.0.0:8000"
+            ],
+            "django": true,
+            "justMyCode": true,
+            "env": {
+                "CONFIG_FILE": "${workspaceFolder}/backend/config/local.json"
+            }
+        },
+        {
+            "name": "Matching Service",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "manage.py",
+            "args": [
+                "start_match_worker"
+            ],
+            "cwd": "${workspaceFolder}/backend",
+            "django": true,
+            "justMyCode": true,
+            "env": {
+                "CONFIG_FILE": "config/local.json"
+            }
+        },
+        {
+            "name": "Test Single",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "manage.py",
+            "args": [
+                "test",
+                "${input:testModule}"
+            ],
+            "cwd": "${workspaceFolder}/backend",
+            "django": true,
+            "justMyCode": true,
+            "env": {
+                "CONFIG_FILE": "config/local.json"
+            }
+        }
+    ],
+    "inputs": [
+    {
+      "id": "testModule",
+      "type": "promptString",
+      "description": "Enter a test module or test case (e.g. main.tests.services.mpi_engine.test_mpi_engine_service.MPIEngineServiceTestCase",
+      "default": "main.tests."
+    }
+  ]
+}

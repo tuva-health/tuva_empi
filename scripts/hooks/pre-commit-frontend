@@ -1,0 +1,22 @@
+#!/bin/bash
+
+echo "Running pre-commit hooks..."
+
+# Change directory to the frontend folder
+cd "$(git rev-parse --show-toplevel)/frontend" || exit 1
+
+# Get staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(jsx?|tsx?|css|json|md)$' | xargs)
+
+if [ -n "$STAGED_FILES" ]; then
+  echo "Running lint check (includes TypeScript, ESLint, and Prettier)..."
+  if ! npm run lint; then
+    echo "❌ ERROR: Linting or formatting issues detected. Please fix before committing."
+    echo "   Hint: You can run 'npm run format' to fix most issues automatically."
+    exit 1
+  fi
+else
+  echo "No files to check."
+fi
+
+exit 0

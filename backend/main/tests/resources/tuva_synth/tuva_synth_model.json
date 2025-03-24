@@ -1,0 +1,161 @@
+{
+    "probability_two_random_records_match": 0.00022159115356482079,
+    "em_convergence": 0.001,
+    "max_iterations": 20,
+    "blocking_rules_to_generate_predictions": [
+        {
+            "blocking_rule": "(l.\"first_name\" = r.\"first_name\") AND (l.\"last_name\" = r.\"last_name\")"
+        },
+        {
+            "blocking_rule": "(l.\"first_name\" = r.\"first_name\") AND (l.\"birth_date\" = r.\"birth_date\")"
+        },
+        {
+            "blocking_rule": "(l.\"last_name\" = r.\"last_name\") AND (l.\"birth_date\" = r.\"birth_date\")"
+        },
+        {
+            "blocking_rule": "(l.\"social_security_number\" = r.\"social_security_number\")"
+        }
+    ],
+    "comparisons": [
+        {
+            "output_column_name": "first_name",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"first_name_l\" IS NULL OR \"first_name_r\" IS NULL",
+                    "label_for_charts": "first_name is NULL",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"first_name_l\" = \"first_name_r\"",
+                    "label_for_charts": "Exact match on first_name",
+                    "m_probability": 0.56069653590478,
+                    "u_probability": 0.004043715846994536,
+                    "tf_adjustment_column": "first_name",
+                    "tf_adjustment_weight": 1.0
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.9",
+                    "label_for_charts": "Jaro-Winkler distance of first_name >= 0.9",
+                    "m_probability": 0.2415504423219833,
+                    "u_probability": 0.002431909126113334
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"first_name_l\", \"first_name_r\") >= 0.7",
+                    "label_for_charts": "Jaro-Winkler distance of first_name >= 0.7",
+                    "m_probability": 0.19148494935340832,
+                    "u_probability": 0.02421840712533884
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.006268072419828449,
+                    "u_probability": 0.9693059679015533
+                }
+            ],
+            "comparison_description": "JaroWinklerAtThresholds"
+        },
+        {
+            "output_column_name": "last_name",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"last_name_l\" IS NULL OR \"last_name_r\" IS NULL",
+                    "label_for_charts": "last_name is NULL",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"last_name_l\" = \"last_name_r\"",
+                    "label_for_charts": "Exact match on last_name",
+                    "m_probability": 0.4392918302450588,
+                    "u_probability": 0.0027941999053397015,
+                    "tf_adjustment_column": "last_name",
+                    "tf_adjustment_weight": 1.0
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"last_name_l\", \"last_name_r\") >= 0.9",
+                    "label_for_charts": "Jaro-Winkler distance of last_name >= 0.9",
+                    "m_probability": 0.5544398925109798,
+                    "u_probability": 0.0021453465857751387
+                },
+                {
+                    "sql_condition": "jaro_winkler_similarity(\"last_name_l\", \"last_name_r\") >= 0.7",
+                    "label_for_charts": "Jaro-Winkler distance of last_name >= 0.7",
+                    "m_probability": 0.0062682772427918075,
+                    "u_probability": 0.01973753280839895
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 1.1696353537026662e-12,
+                    "u_probability": 0.9753229207004862
+                }
+            ],
+            "comparison_description": "JaroWinklerAtThresholds"
+        },
+        {
+            "output_column_name": "birth_date",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"birth_date_l\" IS NULL OR \"birth_date_r\" IS NULL",
+                    "label_for_charts": "birth_date is NULL",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"birth_date_l\" = \"birth_date_r\"",
+                    "label_for_charts": "Exact match on birth_date",
+                    "m_probability": 0.48679787289097814,
+                    "u_probability": 0.0007176971730992642,
+                    "tf_adjustment_column": "birth_date",
+                    "tf_adjustment_weight": 1.0
+                },
+                {
+                    "sql_condition": "levenshtein(\"birth_date_l\", \"birth_date_r\") <= 1",
+                    "label_for_charts": "Levenshtein distance of birth_date <= 1",
+                    "m_probability": 0.4659410555968632,
+                    "u_probability": 0.0012968460909599416
+                },
+                {
+                    "sql_condition": "levenshtein(\"birth_date_l\", \"birth_date_r\") <= 2",
+                    "label_for_charts": "Levenshtein distance of birth_date <= 2",
+                    "m_probability": 0.04687199607499394,
+                    "u_probability": 0.014402134159459576
+                },
+                {
+                    "sql_condition": "levenshtein(\"birth_date_l\", \"birth_date_r\") <= 4",
+                    "label_for_charts": "Levenshtein distance of birth_date <= 4",
+                    "m_probability": 6.616527376443376e-05,
+                    "u_probability": 0.3746026418828794
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.0003229101634003576,
+                    "u_probability": 0.6089806806936018
+                }
+            ],
+            "comparison_description": "LevenshteinAtThresholds"
+        },
+        {
+            "output_column_name": "social_security_number",
+            "comparison_levels": [
+                {
+                    "sql_condition": "\"social_security_number_l\" IS NULL OR \"social_security_number_r\" IS NULL",
+                    "label_for_charts": "social_security_number is NULL",
+                    "is_null_level": true
+                },
+                {
+                    "sql_condition": "\"social_security_number_l\" = \"social_security_number_r\"",
+                    "label_for_charts": "Exact match on social_security_number",
+                    "m_probability": 0.6664240995234721,
+                    "u_probability": 0.0006944623725313024
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.33357590047652785,
+                    "u_probability": 0.9993055376274687
+                }
+            ],
+            "comparison_description": "ExactMatch"
+        }
+    ]
+}
