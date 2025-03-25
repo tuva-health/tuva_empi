@@ -10,7 +10,7 @@
 
 #### VS Code
 
-1. With VS Code, just open the repository root directory or the `.devcontainer` directory and you should be prompted to open the project in a dev container.
+1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container.
 1. Then inside the dev container terminal:
    ```
    > cd frontend
@@ -20,7 +20,7 @@
 
 #### Other IDEs
 
-1. `cd .devcontainer`
+1. `cd .devcontainer/mpi-engine-frontend`
 1. Build the frontend Docker container: `docker build -t mpi-engine-frontend .`
 1. Run the frontend container `docker run --name mpi-engine-frontend -v $PWD:/app -p 127.0.0.1:3000:3000 -it mpi-engine-frontend`
 1. Then inside the container:

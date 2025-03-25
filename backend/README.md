@@ -12,7 +12,7 @@ The backend for the Tuva MPI Engine. It consists of a Django API and PostgreSQL 
 
 #### VS Code
 
-1. With VS Code, just open the repository root directory or the `.devcontainer` directory and you should be prompted to open the project in a dev container.
+1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container.
 1. Then inside the dev container terminal:
    ```
    > cd backend
@@ -103,8 +103,6 @@ Currently, there are a couple config environments:
 
 - local (local development)
 - ci (Github Actions)
-- dev (AWS backend-dev environment)
-- prod (AWS production environment)
 
 But really, an environment is just a name. And the only one that has any special meaning is "local", because settings.py sets certain things if the env is set to "local".
 
