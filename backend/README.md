@@ -12,7 +12,7 @@ The backend for the Tuva MPI Engine. It consists of a Django API and PostgreSQL 
 
 #### VS Code
 
-1. With VS Code, just open the repository root directory or the `.devcontainer` directory and you should be prompted to open the project in a dev container.
+1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container.
 1. Then inside the dev container terminal:
    ```
    > cd backend
