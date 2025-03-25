@@ -22,7 +22,7 @@ export interface PersonSummary {
 export interface Person {
   id: string;
   created: Date;
-  version: number;
+  version?: number;
   records: PersonRecord[];
 }
 

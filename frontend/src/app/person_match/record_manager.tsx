@@ -218,9 +218,9 @@ const PersonRow: React.FC<PersonRowProps> = ({
     "bg-chart-4/25",
     "bg-chart-5/25",
   ];
-  const bgClassName = bgClassNames[ndx % 3];
-  const bgClassNameMuted = bgClassNamesMuted[ndx % 3];
-  const bgClassNameLessMuted = bgClassNamesLessMuted[ndx % 3];
+  const bgClassName = bgClassNames[ndx % 5];
+  const bgClassNameMuted = bgClassNamesMuted[ndx % 5];
+  const bgClassNameLessMuted = bgClassNamesLessMuted[ndx % 5];
 
   const ref = React.useRef(null);
   const { dropProps, isDropTarget } = useDrop({
@@ -241,6 +241,12 @@ const PersonRow: React.FC<PersonRowProps> = ({
     },
   });
 
+  const isNewPerson = person.id.startsWith("new-person-");
+  const personIndex = isNewPerson
+    ? parseInt(person.id.replace("new-person-", ""))
+    : undefined;
+  const displayText = isNewPerson ? `New Person ${personIndex}` : person.id;
+
   return (
     <React.Fragment>
       <TableRow
@@ -249,7 +255,7 @@ const PersonRow: React.FC<PersonRowProps> = ({
         {...dropProps}
       >
         <TableCell className={`${bgClassName}`}></TableCell>
-        <TableCell className={`${bgClassNameMuted}`}>{person.id}</TableCell>
+        <TableCell className={`${bgClassNameMuted}`}>{displayText}</TableCell>
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
@@ -303,6 +309,9 @@ export const RecordManager: React.FC = () => {
   );
   const matchPersonRecords = useAppStore(
     (state) => state.personMatch.matchPersonRecords,
+  );
+  const createNewPerson = useAppStore(
+    (state) => state.personMatch.createNewPerson,
   );
 
   const potentialMatch =
@@ -406,6 +415,16 @@ export const RecordManager: React.FC = () => {
               </TableBody>
             </Table>
           </div>
+          {matchMode && potentialMatch && (
+            <div className="flex flex-row items-start justify-start pt-6">
+              <Button
+                variant="outline"
+                onClick={() => createNewPerson(potentialMatch.id)}
+              >
+                + Create New Person
+              </Button>
+            </div>
+          )}
         </div>
       ) : loading ? (
         <div className="flex flex-row items-center justify-center max-h-[444px] h-full w-full">
