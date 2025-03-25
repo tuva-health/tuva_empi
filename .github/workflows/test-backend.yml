@@ -20,8 +20,8 @@ jobs:
         # https://hub.docker.com/layers/library/postgres/17/images/sha256-719d50f0df30ec51e85b11e858fe6002e35b89c9bcbeb630a5d7c04fc87d66b0?context=explore
         image: postgres:17@sha256:f176fef320ed02c347e9f85352620945547a9a23038f02b57cf7939a198182ae
         env:
-          POSTGRES_USER: mpi_engine
-          POSTGRES_PASSWORD: mpi_engine
+          POSTGRES_USER: tuva_empi
+          POSTGRES_PASSWORD: tuva_empi
         options: >-
           --health-cmd pg_isready
           --health-interval 10s

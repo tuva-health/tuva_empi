@@ -28,8 +28,8 @@ from main.models import (
     PersonRecordStaging,
     SplinkResult,
 )
+from main.services.empi.empi_service import EMPIService
 from main.services.matching.matcher import Matcher
-from main.services.mpi_engine.mpi_engine_service import MPIEngineService
 from main.util.dict import select_keys
 from main.util.sql import load_df
 
@@ -146,16 +146,16 @@ class MatcherTestCase(TestCase):
         person_table = Person._meta.db_table
         person_action_table = PersonAction._meta.db_table
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.5,
                 "auto_match_threshold": 1.0,
             }
         )
-        job1 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
-        job2 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job1 = empi.create_job("s3://tuva-health-example/test", config.id)
+        job2 = empi.create_job("s3://tuva-health-example/test", config.id)
 
         person1 = Person.objects.create(
             uuid=uuid.uuid4(),
@@ -409,15 +409,15 @@ class MatcherTestCase(TestCase):
         self.assertEqual(loaded_person_action.performed_by, None)
 
     def test_extract_person_records(self) -> None:
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.5,
                 "auto_match_threshold": 1.0,
             }
         )
-        job = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
 
         person1 = Person.objects.create(
             uuid=uuid.uuid4(),
@@ -516,15 +516,15 @@ class MatcherTestCase(TestCase):
             )
 
     def test_run_splink_prediction(self) -> None:
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": self.splink_settings,
                 "potential_match_threshold": 0,
                 "auto_match_threshold": 0.002,
             }
         )
-        job = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
 
         person = Person.objects.create(
             uuid=uuid.uuid4(),
@@ -758,15 +758,15 @@ class MatcherTestCase(TestCase):
         )
 
     def test_create_match_event(self) -> None:
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.5,
                 "auto_match_threshold": 1.0,
             }
         )
-        job = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
 
         self.assertEqual(MatchEvent.objects.count(), 0)
 
@@ -791,16 +791,16 @@ class MatcherTestCase(TestCase):
         # Load PersonRecords, Persons and Results
         #
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.5,
                 "auto_match_threshold": 1.0,
             }
         )
-        job1 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
-        job2 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job1 = empi.create_job("s3://tuva-health-example/test", config.id)
+        job2 = empi.create_job("s3://tuva-health-example/test", config.id)
 
         # Load Persons
 
@@ -1245,16 +1245,16 @@ class MatcherTestCase(TestCase):
         # Load PersonRecords, Persons
         #
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.5,
                 "auto_match_threshold": 1.0,
             }
         )
-        job1 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
-        job2 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job1 = empi.create_job("s3://tuva-health-example/test", config.id)
+        job2 = empi.create_job("s3://tuva-health-example/test", config.id)
 
         # Load Persons
 
@@ -1502,15 +1502,15 @@ class MatcherTestCase(TestCase):
         # Load staging records
         #
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": self.splink_settings,
                 "potential_match_threshold": 0.001,
                 "auto_match_threshold": 0.0013,
             }
         )
-        job = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
 
         common_person_record = {
             "created": timezone.now(),
@@ -1668,8 +1668,8 @@ class MatcherTestCase(TestCase):
         # Load staging records
         #
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": self.splink_settings,
                 # Increase the potential match threshold so that run_splink_prediction returns zero results
@@ -1677,7 +1677,7 @@ class MatcherTestCase(TestCase):
                 "auto_match_threshold": 0.0023,
             }
         )
-        job = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
 
         common_person_record = {
             "created": timezone.now(),
@@ -1807,16 +1807,16 @@ class MatcherWithLockingTestCase(TransactionTestCase):
         # Load PersonRecords, Persons, Results and MatchGroups
         #
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.0,
                 "auto_match_threshold": 1.0,
             }
         )
-        job1 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
-        job2 = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job1 = empi.create_job("s3://tuva-health-example/test", config.id)
+        job2 = empi.create_job("s3://tuva-health-example/test", config.id)
 
         person1 = Person.objects.create(
             uuid=uuid.uuid4(),
@@ -2032,15 +2032,15 @@ class MatcherWithLockingTestCase(TransactionTestCase):
         # Load PersonRecords, Persons
         #
 
-        mpi_engine = MPIEngineService()
-        config = mpi_engine.create_config(
+        empi = EMPIService()
+        config = empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.0,
                 "auto_match_threshold": 1.0,
             }
         )
-        job = mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
 
         person1 = Person.objects.create(
             uuid=uuid.uuid4(),

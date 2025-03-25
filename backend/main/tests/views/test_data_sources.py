@@ -6,11 +6,11 @@ from django.urls import reverse
 
 
 class DataSourcesTestCase(TestCase):
-    @patch("main.views.data_sources.MPIEngineService")
-    def test_get_data_sources_ok(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.data_sources.EMPIService")
+    def test_get_data_sources_ok(self, mock_empi: Any) -> None:
         """Tests get_data_sources returns data sources."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_data_sources.return_value = [
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_data_sources.return_value = [
             {"name": "test1"},
             {"name": "test2"},
         ]

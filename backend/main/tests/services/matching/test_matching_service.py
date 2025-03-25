@@ -22,7 +22,7 @@ class MatchingServiceTestCase(unittest.TestCase):
     job_partial = {
         "created": now,
         "updated": now,
-        "s3_uri": "s3://tuva-mpi-engine-example/test",
+        "s3_uri": "s3://tuva-empi-example/test",
         "status": JobStatus.new,
         "reason": None,
     }

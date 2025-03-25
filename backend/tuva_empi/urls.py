@@ -1,4 +1,4 @@
-"""URL configuration for mpi_engine project."""
+"""URL configuration for tuva_empi project."""
 
 from django.urls import include, path
 

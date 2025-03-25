@@ -155,7 +155,7 @@ class PersonSummaryDict(TypedDict):
     data_sources: list[str]
 
 
-class MPIEngineService:
+class EMPIService:
     logger: logging.Logger
     s3: S3Client
 

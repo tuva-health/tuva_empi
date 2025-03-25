@@ -55,7 +55,7 @@ configure:
 	DEST_CONFIG_FILE=config/deployment.json python configure.py
 
 run: migrate
-	gunicorn mpi_engine.wsgi:application --bind 0.0.0.0:8000
+	gunicorn tuva_empi.wsgi:application --bind 0.0.0.0:8000
 
 configure-and-run: configure
 	CONFIG_FILE=config/deployment.json $(MAKE) run

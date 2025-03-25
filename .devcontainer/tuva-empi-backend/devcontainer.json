@@ -1,7 +1,7 @@
 {
-    "name": "MPI Engine backend dev container",
+    "name": "Tuva EMPI backend dev container",
     "dockerComposeFile": ["../docker-compose.yml"],
-    "service": "mpi-engine-backend",
+    "service": "tuva-empi-backend",
     "shutdownAction": "none",
     "workspaceFolder": "/app",
     "customizations": {

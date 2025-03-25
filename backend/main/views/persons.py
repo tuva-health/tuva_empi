@@ -5,8 +5,8 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from main.models import Person
-from main.services.mpi_engine.mpi_engine_service import (
-    MPIEngineService,
+from main.services.empi.empi_service import (
+    EMPIService,
 )
 from main.util.dict import select_keys
 from main.util.object_id import (
@@ -37,12 +37,12 @@ def get_persons(request: Request) -> Response:
 
     if serializer.is_valid(raise_exception=True):
         data = {**serializer.validated_data}
-        mpi_engine = MPIEngineService()
+        empi = EMPIService()
 
         if data.get("person_id"):
             data["person_id"] = remove_prefix(data.get("person_id", ""))
 
-        persons = mpi_engine.get_persons(**data)
+        persons = empi.get_persons(**data)
 
         return Response(
             {
@@ -80,10 +80,10 @@ def get_person(request: Request, id: int) -> Response:
 
     if serializer.is_valid(raise_exception=True):
         data = serializer.validated_data
-        mpi_engine = MPIEngineService()
+        empi = EMPIService()
 
         try:
-            person = mpi_engine.get_person(uuid=get_uuid(data["person_id"]))
+            person = empi.get_person(uuid=get_uuid(data["person_id"]))
         except Person.DoesNotExist:
             message = "Resource not found"
 

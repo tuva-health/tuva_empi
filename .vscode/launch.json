@@ -52,7 +52,7 @@
     {
       "id": "testModule",
       "type": "promptString",
-      "description": "Enter a test module or test case (e.g. main.tests.services.mpi_engine.test_mpi_engine_service.MPIEngineServiceTestCase",
+      "description": "Enter a test module or test case (e.g. main.tests.services.empi.test_empi_service.EMPIServiceTestCase",
       "default": "main.tests."
     }
   ]
