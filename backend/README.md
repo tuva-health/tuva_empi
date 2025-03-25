@@ -103,8 +103,6 @@ Currently, there are a couple config environments:
 
 - local (local development)
 - ci (Github Actions)
-- dev (AWS backend-dev environment)
-- prod (AWS production environment)
 
 But really, an environment is just a name. And the only one that has any special meaning is "local", because settings.py sets certain things if the env is set to "local".
 
