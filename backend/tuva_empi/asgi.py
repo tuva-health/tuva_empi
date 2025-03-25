@@ -1,4 +1,4 @@
-"""ASGI config for mpi_engine project.
+"""ASGI config for tuva_empi project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -10,6 +10,6 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mpi_engine.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tuva_empi.settings")
 
 application = get_asgi_application()

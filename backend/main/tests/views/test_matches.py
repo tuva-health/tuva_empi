@@ -14,11 +14,11 @@ class MatchesTestCase(TestCase):
     # create_match
     #
 
-    @patch("main.views.matches.MPIEngineService")
-    def test_create_match_ok(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.matches.EMPIService")
+    def test_create_match_ok(self, mock_empi: Any) -> None:
         """Tests create_match succeeds."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.match_person_records.return_value = None
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.match_person_records.return_value = None
 
         url = reverse("create_match")
         person_uuid = str(uuid.uuid4())
@@ -42,7 +42,7 @@ class MatchesTestCase(TestCase):
 
         response = self.client.post(url, request_data, content_type="application/json")
 
-        mock_mpi_engine_obj.match_person_records.assert_called_once_with(
+        mock_empi_obj.match_person_records.assert_called_once_with(
             potential_match_id=123,
             potential_match_version=1,
             person_updates=[
@@ -63,11 +63,11 @@ class MatchesTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(response.json(), {})
 
-    @patch("main.views.matches.MPIEngineService")
-    def test_create_match_no_comments(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.matches.EMPIService")
+    def test_create_match_no_comments(self, mock_empi: Any) -> None:
         """Tests create_match succeeds without comments."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.match_person_records.return_value = None
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.match_person_records.return_value = None
 
         url = reverse("create_match")
         person_uuid = str(uuid.uuid4())
@@ -85,7 +85,7 @@ class MatchesTestCase(TestCase):
 
         response = self.client.post(url, request_data, content_type="application/json")
 
-        mock_mpi_engine_obj.match_person_records.assert_called_once_with(
+        mock_empi_obj.match_person_records.assert_called_once_with(
             potential_match_id=321,
             potential_match_version=3,
             person_updates=[
@@ -236,13 +236,11 @@ class MatchesTestCase(TestCase):
             response.json()["error"]["message"].startswith("Unexpected internal error")
         )
 
-    @patch("main.views.matches.MPIEngineService")
-    def test_create_match_internal_error(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.matches.EMPIService")
+    def test_create_match_internal_error(self, mock_empi: Any) -> None:
         """Tests create_match handles unexpected internal errors."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.match_person_records.side_effect = Exception(
-            "Unexpected error"
-        )
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.match_person_records.side_effect = Exception("Unexpected error")
 
         url = reverse("create_match")
 

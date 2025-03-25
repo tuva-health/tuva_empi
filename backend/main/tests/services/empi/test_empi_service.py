@@ -26,12 +26,12 @@ from main.models import (
     SplinkResult,
 )
 from main.s3 import S3Client
-from main.services.mpi_engine.mpi_engine_service import (
+from main.services.empi.empi_service import (
     DataSourceDict,
+    EMPIService,
     InvalidPersonRecordFileFormat,
     InvalidPersonUpdate,
     InvalidPotentialMatch,
-    MPIEngineService,
     PersonDict,
     PersonRecordDict,
     PersonSummaryDict,
@@ -82,12 +82,12 @@ class ImportPersonRecordsTestCase(TestCase):
         )
 
     def test_import(self) -> None:
-        mpi_engine = MPIEngineService(
+        empi = EMPIService(
             cast(S3Client, MockFSS3Client("../../resources/raw-person-records.csv"))
         )
         s3_uri = "s3://tuva-health-example/test"
 
-        mpi_engine.import_person_records(s3_uri, self.config.id)
+        empi.import_person_records(s3_uri, self.config.id)
 
         records = PersonRecordStaging.objects.all()
 
@@ -158,7 +158,7 @@ class ImportPersonRecordsTestCase(TestCase):
         s3_uri = "s3://tuva-health-example/test"
 
         # Missing phone column only in header
-        mpi_engine = MPIEngineService(
+        empi = EMPIService(
             cast(
                 S3Client,
                 MockFSS3Client(
@@ -167,14 +167,14 @@ class ImportPersonRecordsTestCase(TestCase):
             )
         )
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
-            mpi_engine.import_person_records(s3_uri, self.config.id)
+            empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
             "Incorrectly formatted person records file due to invalid header.",
             str(cm.exception),
         )
 
         # Missing phone column only in first row
-        mpi_engine = MPIEngineService(
+        empi = EMPIService(
             cast(
                 S3Client,
                 MockFSS3Client(
@@ -183,21 +183,21 @@ class ImportPersonRecordsTestCase(TestCase):
             )
         )
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
-            mpi_engine.import_person_records(s3_uri, self.config.id)
+            empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
             'Incorrectly formatted person records file due to missing data for column "phone"',
             str(cm.exception),
         )
 
         # Extra column in header and first row
-        mpi_engine = MPIEngineService(
+        empi = EMPIService(
             cast(
                 S3Client,
                 MockFSS3Client("../../resources/raw-person-records-extra-col.csv"),
             )
         )
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
-            mpi_engine.import_person_records(s3_uri, self.config.id)
+            empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
             "Incorrectly formatted person records file due to invalid header.",
             str(cm.exception),
@@ -205,20 +205,20 @@ class ImportPersonRecordsTestCase(TestCase):
 
 
 class GetDataSourcesTestCase(TestCase):
-    mpi_engine: MPIEngineService
+    empi: EMPIService
 
     def setUp(self) -> None:
-        self.mpi_engine = MPIEngineService()
+        self.empi = EMPIService()
 
         now = django_tz.now()
-        config = self.mpi_engine.create_config(
+        config = self.empi.create_config(
             {
                 "splink_settings": {},
                 "potential_match_threshold": 0.5,
                 "auto_match_threshold": 1.0,
             }
         )
-        job = self.mpi_engine.create_job("s3://tuva-health-example/test", config.id)
+        job = self.empi.create_job("s3://tuva-health-example/test", config.id)
         person = Person.objects.create(
             uuid=uuid.uuid4(),
             created=now,
@@ -262,7 +262,7 @@ class GetDataSourcesTestCase(TestCase):
             DataSourceDict(name="ds2"),
         ]
 
-        data_sources = self.mpi_engine.get_data_sources()
+        data_sources = self.empi.get_data_sources()
 
         self.assertEqual(len(data_sources), 2)
         self.assertEqual(data_sources, expected_data_sources)
@@ -271,14 +271,14 @@ class GetDataSourcesTestCase(TestCase):
         """Tests get_data_sources when no records exist."""
         PersonRecord.objects.all().delete()
 
-        data_sources = self.mpi_engine.get_data_sources()
+        data_sources = self.empi.get_data_sources()
 
         self.assertEqual(len(data_sources), 0)
         self.assertEqual(data_sources, [])
 
 
 class PotentialMatchesTestCase(TransactionTestCase):
-    mpi_engine: MPIEngineService
+    empi: EMPIService
     now: datetime
     common_person_record: Mapping[str, Any]
     config: Config
@@ -297,7 +297,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def setUp(self) -> None:
         self.maxDiff = None
-        self.mpi_engine = MPIEngineService()
+        self.empi = EMPIService()
         self.now = django_tz.now()
 
         self.config = Config.objects.create(
@@ -483,7 +483,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_all_potential_matches(self) -> None:
         """Tests returns all matches by default."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="",
             last_name="",
             birth_date="",
@@ -509,7 +509,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches()
+        matches = self.empi.get_potential_matches()
         expected = [
             PotentialMatchSummaryDict(
                 id=self.match_group1.id,
@@ -530,7 +530,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_by_first_name(self) -> None:
         """Tests searching by first name (case-insensitive)."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         expected = [
@@ -544,7 +544,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="ohn",
         )
         expected = [
@@ -560,7 +560,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_by_last_name(self) -> None:
         """Tests searching by last name (case-insensitive)."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             last_name="smith",
         )
         expected = [
@@ -581,7 +581,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             last_name="smi",
         )
         expected = [
@@ -602,7 +602,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             last_name="rom",
         )
         expected = [
@@ -618,7 +618,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_by_birth_date(self) -> None:
         """Tests searching by birth date."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             birth_date="1900-01-01",
         )
         expected = [
@@ -639,7 +639,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             birth_date="1900",
         )
         expected = [
@@ -662,7 +662,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_by_person_id(self) -> None:
         """Tests searching by person ID."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             person_id=str(self.person1.uuid),
         )
         expected = [
@@ -676,7 +676,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             person_id=str(self.person5.uuid)[:20],
         )
         expected = [
@@ -692,12 +692,12 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_by_source_person_id(self) -> None:
         """Tests searching by source person ID."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             source_person_id="a2",
         )
         self.assertEqual(matches, [])
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             source_person_id="a1",
         )
         expected = [
@@ -720,7 +720,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_by_data_source(self) -> None:
         """Tests searching by data source."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             data_source="ds1",
         )
         expected = [
@@ -734,7 +734,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             data_source="ds5",
         )
         expected = [
@@ -750,7 +750,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_no_results(self) -> None:
         """Tests empty results with no matches."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="NONEXISTENT",
         )
         self.assertEqual(matches, [])
@@ -829,7 +829,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         )
 
         # Query for the match group we just created
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="Test",
         )
 
@@ -901,7 +901,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         )
 
         # Query for the match group we just created
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="LowProb",
         )
 
@@ -911,7 +911,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_matches_matched(self) -> None:
         """Tests does not return already matched PotentialMatches."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         expected = [
@@ -928,14 +928,14 @@ class PotentialMatchesTestCase(TransactionTestCase):
         self.match_group1.matched = self.now
         self.match_group1.save()
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         self.assertEqual(matches, [])
 
     def test_get_potential_matches_deleted(self) -> None:
         """Tests does not return deleted PotentialMatches."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         expected = [
@@ -952,14 +952,14 @@ class PotentialMatchesTestCase(TransactionTestCase):
         self.match_group1.deleted = self.now
         self.match_group1.save()
 
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         self.assertEqual(matches, [])
 
     def test_get_potential_matches_linked_records(self) -> None:
         """Tests get_potential_matches returns linked records that are not referenced by a SplinkResult."""
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             last_name="Berry",
         )
         self.assertEqual(matches, [])
@@ -973,7 +973,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
             first_name="Jerry",
             last_name="Berry",
         )
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             last_name="Berry",
         )
         self.assertEqual(
@@ -990,7 +990,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         )
 
     def test_get_potential_matches_missing_results(self) -> None:
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         expected = [
@@ -1005,7 +1005,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         self.assertEqual(matches, expected)
 
         self.result2.delete()
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         self.assertEqual(
@@ -1022,7 +1022,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         )
 
         self.result1.delete()
-        matches = self.mpi_engine.get_potential_matches(
+        matches = self.empi.get_potential_matches(
             first_name="john",
         )
         self.assertEqual(matches, [])
@@ -1033,7 +1033,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
     def test_get_potential_match(self) -> None:
         """Tests returns potential match."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         expected = PotentialMatchDict(
             id=self.match_group1.id,
             created=self.match_group1.created,
@@ -1088,7 +1088,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
             {"John", "Jane", "Paul", "Linda"},
         )
 
-        match = self.mpi_engine.get_potential_match(self.match_group2.id)
+        match = self.empi.get_potential_match(self.match_group2.id)
         expected = PotentialMatchDict(
             id=self.match_group2.id,
             created=self.match_group2.created,
@@ -1146,10 +1146,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
     def test_get_potential_match_missing(self) -> None:
         """Tests throws error when match is missing."""
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(12345689)
+            self.empi.get_potential_match(12345689)
 
     def test_get_potential_match_matched(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         expected = PotentialMatchDict(
             id=self.match_group1.id,
             created=self.match_group1.created,
@@ -1208,10 +1208,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
         self.match_group1.save()
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
     def test_get_potential_match_deleted(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         expected = PotentialMatchDict(
             id=self.match_group1.id,
             created=self.match_group1.created,
@@ -1270,7 +1270,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         self.match_group1.save()
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
     def test_get_potential_match_isolation_level(self) -> None:
         """Tests that get_potential_match is using repeatable read by delaying part of the query."""
@@ -1287,10 +1287,8 @@ class PotentialMatchesTestCase(TransactionTestCase):
             """Thread 1: Calls get_potential_match and waits inside a transaction."""
             nonlocal match
 
-            with patch.object(
-                self.mpi_engine.logger, "info", side_effect=mock_logger_info
-            ):
-                match = self.mpi_engine.get_potential_match(self.match_group1.id)
+            with patch.object(self.empi.logger, "info", side_effect=mock_logger_info):
+                match = self.empi.get_potential_match(self.match_group1.id)
 
         def thread2() -> None:
             """Thread 2: Updates the PotentialMatch while thread 1 is waiting."""
@@ -1366,7 +1364,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
 
 
 class MatchPersonRecordsTestCase(TransactionTestCase):
-    mpi_engine: MPIEngineService
+    empi: EMPIService
     now: datetime
     common_person_record: Mapping[str, Any]
     config: Config
@@ -1391,7 +1389,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
 
     def setUp(self) -> None:
         self.maxDiff = None
-        self.mpi_engine = MPIEngineService()
+        self.empi = EMPIService()
         self.now = django_tz.now()
 
         self.config = Config.objects.create(
@@ -1637,12 +1635,12 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         )
 
     def test_match_empty_updates(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         # Keep PersonRecords how they are
         person_updates: list[PersonUpdateDict] = []
 
-        match_event = self.mpi_engine.match_person_records(
+        match_event = self.empi.match_person_records(
             match["id"], match["version"], person_updates
         )
 
@@ -1651,7 +1649,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
         #
         # MatchGroup should be updated
@@ -1764,7 +1762,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.assert_match_group_action_details(self.match_group1, match_event)
 
     def test_match_no_changes(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         # Keep PersonRecords how they are
         person_updates: list[PersonUpdateDict] = [
@@ -1776,7 +1774,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             for person in match["persons"]
         ]
 
-        match_event = self.mpi_engine.match_person_records(
+        match_event = self.empi.match_person_records(
             match["id"], match["version"], person_updates
         )
 
@@ -1785,7 +1783,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
         #
         # MatchGroup should be updated
@@ -1911,7 +1909,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.assert_match_group_action_details(self.match_group1, match_event)
 
     def test_match_changes(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         # Move person records around
         person_updates: list[PersonUpdateDict] = [
@@ -1939,7 +1937,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             # person4 doesn't change
         ]
 
-        match_event = self.mpi_engine.match_person_records(
+        match_event = self.empi.match_person_records(
             match["id"], match["version"], person_updates
         )
 
@@ -1948,7 +1946,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
         #
         # MatchGroup should be updated
@@ -2094,7 +2092,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.assert_match_group_action_details(self.match_group1, match_event)
 
     def test_match_changes_merge(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         # Move person records around
         person_updates: list[PersonUpdateDict] = [
@@ -2129,7 +2127,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             },
         ]
 
-        match_event = self.mpi_engine.match_person_records(
+        match_event = self.empi.match_person_records(
             match["id"], match["version"], person_updates
         )
 
@@ -2138,7 +2136,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
         #
         # MatchGroup should be updated
@@ -2315,7 +2313,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             last_name="Lacy",
         )
 
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         # Move person records around
         person_updates: list[PersonUpdateDict] = [
@@ -2347,7 +2345,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             # person4 doesn't change
         ]
 
-        match_event = self.mpi_engine.match_person_records(
+        match_event = self.empi.match_person_records(
             match["id"], match["version"], person_updates
         )
 
@@ -2356,7 +2354,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
         #
         # MatchGroup should be updated
@@ -2523,7 +2521,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.assert_match_group_action_details(self.match_group1, match_event)
 
     def test_match_new_persons(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         # Move person records around
         person_updates: list[PersonUpdateDict] = [
@@ -2564,7 +2562,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             },
         ]
 
-        match_event = self.mpi_engine.match_person_records(
+        match_event = self.empi.match_person_records(
             match["id"], match["version"], person_updates
         )
 
@@ -2573,7 +2571,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         with self.assertRaises(MatchGroup.DoesNotExist):
-            self.mpi_engine.get_potential_match(self.match_group1.id)
+            self.empi.get_potential_match(self.match_group1.id)
 
         #
         # MatchGroup should be updated
@@ -2754,7 +2752,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
 
     def test_validation_existing_person_fields(self) -> None:
         """A PersonUpdate for an existing Person should specify a version."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         person_updates: list[PersonUpdateDict] = [
             {
@@ -2767,13 +2765,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "A PersonUpdate for an existing Person should specify a version",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_new_person_fields(self) -> None:
         """A PersonUpdate for a new Person should not specify a version."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         person_updates: list[PersonUpdateDict] = [
             {
@@ -2786,13 +2784,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "A PersonUpdate for a new Person should not specify a version",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_new_person_missing_records(self) -> None:
         """Check that if it's a new Person it also has 1 or more records."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         person_updates: list[PersonUpdateDict] = [
             {
@@ -2804,13 +2802,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "A PersonUpdate for a new Person should have 1 or more new_record_ids",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_same_person_dupe(self) -> None:
         """A PersonRecord ID cannot exist twice in the same PersonUpdate."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         person_updates: list[PersonUpdateDict] = [
             {
@@ -2833,7 +2831,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 f" PersonRecord {self.person_record1.id} exists in update for Person index 1 twice."
             ),
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
@@ -2855,13 +2853,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 f" PersonRecord {self.person_record1.id} exists in update for Person {self.person2.uuid} twice."
             ),
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_other_person_dupe(self) -> None:
         """A PersonRecord ID cannot exist in more than PersonUpdate."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         #
         # Duplicate in two new Persons
@@ -2887,7 +2885,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 f" PersonRecord {self.person_record1.id} exists in updates for Person index 1 and Person index 2."
             ),
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
@@ -2917,7 +2915,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 f" PersonRecord {self.person_record1.id} exists in updates for Person {self.person1.uuid} and Person {self.person2.uuid}."
             ),
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
@@ -2949,7 +2947,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 f" PersonRecord {self.person_record1.id} exists in updates for Person {self.person1.uuid} and Person {self.person2.uuid}."
             ),
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
@@ -2974,12 +2972,12 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 f" PersonRecord {self.person_record1.id} exists in updates for Person {self.person1.uuid} and Person index 1."
             ),
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_person_dupe(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         person_updates: list[PersonUpdateDict] = [
             {
@@ -3000,7 +2998,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "The same Person UUID cannot exist in more than one PersonUpdate",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
@@ -3008,10 +3006,10 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             MatchGroup.DoesNotExist, "Potential match does not exist"
         ):
-            self.mpi_engine.match_person_records(12345, 1, [])
+            self.empi.match_person_records(12345, 1, [])
 
     def test_validation_potential_match_deleted(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         self.match_group1.deleted = django_tz.now()
         self.match_group1.save()
@@ -3019,10 +3017,10 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             MatchGroup.DoesNotExist, "Potential match has been replaced"
         ):
-            self.mpi_engine.match_person_records(match["id"], match["version"], [])
+            self.empi.match_person_records(match["id"], match["version"], [])
 
     def test_validation_potential_match_matched(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         self.match_group1.matched = django_tz.now()
         self.match_group1.save()
@@ -3030,10 +3028,10 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             InvalidPotentialMatch, "Potential has already been matched"
         ):
-            self.mpi_engine.match_person_records(match["id"], match["version"], [])
+            self.empi.match_person_records(match["id"], match["version"], [])
 
     def test_validation_potential_match_version(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         self.match_group1.version = self.match_group1.version + 1
         self.match_group1.save()
@@ -3041,10 +3039,10 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             InvalidPotentialMatch, "Potential match version is outdated"
         ):
-            self.mpi_engine.match_person_records(match["id"], match["version"], [])
+            self.empi.match_person_records(match["id"], match["version"], [])
 
     def test_validation_person_version_outdated(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         person_updates: list[PersonUpdateDict] = [
             {
                 "uuid": str(self.person1.uuid),
@@ -3064,12 +3062,12 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             InvalidPersonUpdate, "Invalid Person UUID or version outdated"
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_related_records(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         person_updates: list[PersonUpdateDict] = [
             {
                 "uuid": str(self.person1.uuid),
@@ -3091,12 +3089,12 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "PersonRecord IDs specified in new_person_record_ids must be related to PotentialMatch",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_dne_records(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         person_updates: list[PersonUpdateDict] = [
             {
                 "uuid": str(self.person1.uuid),
@@ -3108,12 +3106,12 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "PersonRecord IDs specified in new_person_record_ids must be related to PotentialMatch",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_related_persons(self) -> None:
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
         person_updates: list[PersonUpdateDict] = [
             {
                 "uuid": str(self.person1.uuid),
@@ -3131,13 +3129,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "Specified Person UUID must be related to PotentialMatch",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
     def test_validation_corresponding_add_remove(self) -> None:
         """Check that if a record_id currently exists in a Person and is not in the corresponding person_update, it exists in another person_update."""
-        match = self.mpi_engine.get_potential_match(self.match_group1.id)
+        match = self.empi.get_potential_match(self.match_group1.id)
 
         person_updates: list[PersonUpdateDict] = [
             {
@@ -3154,7 +3152,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "PersonRecord IDs that are added to a Person, must be removed from another Person",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
@@ -3175,13 +3173,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate,
             "PersonRecord IDs that are removed from a Person, must be added to another Person",
         ):
-            self.mpi_engine.match_person_records(
+            self.empi.match_person_records(
                 match["id"], match["version"], person_updates
             )
 
 
 class PersonsTestCase(TransactionTestCase):
-    mpi_engine: MPIEngineService
+    empi: EMPIService
     now: datetime
     common_person_record: Mapping[str, Any]
     config: Config
@@ -3193,7 +3191,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def setUp(self) -> None:
         self.maxDiff = None
-        self.mpi_engine = MPIEngineService()
+        self.empi = EMPIService()
         self.now = django_tz.now()
 
         self.config = Config.objects.create(
@@ -3289,7 +3287,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_all_persons(self) -> None:
         """Tests returns all persons by default."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             first_name="",
             last_name="",
             birth_date="",
@@ -3319,7 +3317,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons()
+        matches = self.empi.get_persons()
         expected = [
             PersonSummaryDict(
                 uuid=str(self.person1.uuid),
@@ -3344,7 +3342,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_by_first_name(self) -> None:
         """Tests searching by first name (case-insensitive)."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             first_name="john",
         )
         expected = [
@@ -3357,7 +3355,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             first_name="ohn",
         )
         expected = [
@@ -3372,7 +3370,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_by_last_name(self) -> None:
         """Tests searching by last name (case-insensitive)."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             last_name="love",
         )
         expected = [
@@ -3385,7 +3383,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             last_name="lo",
         )
         expected = [
@@ -3398,7 +3396,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             last_name="ane",
         )
         expected = [
@@ -3412,7 +3410,7 @@ class PersonsTestCase(TransactionTestCase):
         self.assertEqual(matches, expected)
 
         # Paul Lap is connected with Person2, but we still use the first record's first/last name
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             last_name="lap",
         )
         expected = [
@@ -3427,7 +3425,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_by_birth_date(self) -> None:
         """Tests searching by birth date."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             birth_date="1900-01-01",
         )
         expected = [
@@ -3452,7 +3450,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             birth_date="1900",
         )
         expected = [
@@ -3479,7 +3477,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_by_person_id(self) -> None:
         """Tests searching by person ID."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             person_id=str(self.person1.uuid),
         )
         expected = [
@@ -3492,7 +3490,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             # Testing a prefix search of person_id
             person_id=str(self.person3.uuid)[:20],
         )
@@ -3508,12 +3506,12 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_by_source_person_id(self) -> None:
         """Tests searching by source person ID."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             source_person_id="a2",
         )
         self.assertEqual(matches, [])
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             source_person_id="a1",
         )
         expected = [
@@ -3540,7 +3538,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_by_data_source(self) -> None:
         """Tests searching by data source."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             data_source="ds1",
         )
         expected = [
@@ -3553,7 +3551,7 @@ class PersonsTestCase(TransactionTestCase):
         ]
         self.assertEqual(matches, expected)
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             data_source="ds4",
         )
         expected = [
@@ -3568,7 +3566,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_no_results(self) -> None:
         """Tests when no persons are found."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             first_name="Nonexistent",
         )
 
@@ -3576,7 +3574,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_persons_deleted(self) -> None:
         """Tests does not return deleted Persons."""
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             first_name="john",
         )
         expected = [
@@ -3592,7 +3590,7 @@ class PersonsTestCase(TransactionTestCase):
         self.person1.deleted = self.now
         self.person1.save()
 
-        matches = self.mpi_engine.get_persons(
+        matches = self.empi.get_persons(
             first_name="john",
         )
         self.assertEqual(matches, [])
@@ -3603,7 +3601,7 @@ class PersonsTestCase(TransactionTestCase):
 
     def test_get_person(self) -> None:
         """Tests returns person."""
-        person = self.mpi_engine.get_person(str(self.person1.uuid))
+        person = self.empi.get_person(str(self.person1.uuid))
         expected = PersonDict(
             uuid=str(self.person1.uuid),
             created=self.person1.created,
@@ -3636,7 +3634,7 @@ class PersonsTestCase(TransactionTestCase):
             {"John"},
         )
 
-        person = self.mpi_engine.get_person(str(self.person2.uuid))
+        person = self.empi.get_person(str(self.person2.uuid))
         expected = PersonDict(
             uuid=str(self.person2.uuid),
             created=self.person2.created,
@@ -3672,10 +3670,10 @@ class PersonsTestCase(TransactionTestCase):
     def test_get_person_missing(self) -> None:
         """Tests throws error when person is missing."""
         with self.assertRaises(Person.DoesNotExist):
-            self.mpi_engine.get_person(str(uuid.uuid4()))
+            self.empi.get_person(str(uuid.uuid4()))
 
     def test_get_person_deleted(self) -> None:
-        person = self.mpi_engine.get_person(str(self.person1.uuid))
+        person = self.empi.get_person(str(self.person1.uuid))
         expected = PersonDict(
             uuid=str(self.person1.uuid),
             created=self.person1.created,
@@ -3712,4 +3710,4 @@ class PersonsTestCase(TransactionTestCase):
         self.person1.save()
 
         with self.assertRaises(Person.DoesNotExist):
-            self.mpi_engine.get_person(str(self.person1.uuid))
+            self.empi.get_person(str(self.person1.uuid))

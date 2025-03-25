@@ -9,8 +9,8 @@ const albertSansFont = Albert_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Tuva Health MPI Engine",
-  description: "Tuva Health MPI Engine",
+  title: "Tuva Health Tuva EMPI",
+  description: "Tuva Health Tuva EMPI",
 };
 
 const RootLayout: FC<{ children: React.ReactNode }> = ({ children }) => {

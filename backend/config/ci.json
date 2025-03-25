@@ -1,8 +1,8 @@
 {
     "env": "ci",
     "db": {
-        "user": "mpi_engine",
-        "password": "mpi_engine",
+        "user": "tuva_empi",
+        "password": "tuva_empi",
         "host": "localhost",
         "port": "5432"
     },

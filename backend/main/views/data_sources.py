@@ -4,8 +4,8 @@ from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from main.services.mpi_engine.mpi_engine_service import (
-    MPIEngineService,
+from main.services.empi.empi_service import (
+    EMPIService,
 )
 from main.views.serializer import Serializer
 
@@ -21,8 +21,8 @@ def get_data_sources(request: Request) -> Response:
     serializer = GetDataSourcesRequest(data=request.query_params)
 
     if serializer.is_valid(raise_exception=True):
-        mpi_engine = MPIEngineService()
-        data_sources = mpi_engine.get_data_sources()
+        empi = EMPIService()
+        data_sources = empi.get_data_sources()
 
         return Response(
             {"data_sources": data_sources},

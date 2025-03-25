@@ -7,10 +7,10 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from main.models import MatchGroup
-from main.services.mpi_engine.mpi_engine_service import (
+from main.services.empi.empi_service import (
+    EMPIService,
     InvalidPersonUpdate,
     InvalidPotentialMatch,
-    MPIEngineService,
     PersonUpdateDict,
 )
 from main.util.object_id import get_id, get_uuid
@@ -56,10 +56,10 @@ def create_match(request: Request) -> Response:
 
     if serializer.is_valid(raise_exception=True):
         data = serializer.validated_data
-        mpi_engine = MPIEngineService()
+        empi = EMPIService()
 
         try:
-            mpi_engine.match_person_records(
+            empi.match_person_records(
                 potential_match_id=get_id(data["potential_match_id"]),
                 potential_match_version=data["potential_match_version"],
                 person_updates=[

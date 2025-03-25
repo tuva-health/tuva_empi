@@ -1,4 +1,4 @@
-# tuva-mpi-engine-frontend
+# Tuva EMPI Frontend
 
 ## Development
 
@@ -20,9 +20,9 @@
 
 #### Other IDEs
 
-1. `cd .devcontainer/mpi-engine-frontend`
-1. Build the frontend Docker container: `docker build -t mpi-engine-frontend .`
-1. Run the frontend container `docker run --name mpi-engine-frontend -v $PWD:/app -p 127.0.0.1:3000:3000 -it mpi-engine-frontend`
+1. `cd .devcontainer/tuva-empi-frontend`
+1. Build the frontend Docker container: `docker build -t tuva-empi-frontend .`
+1. Run the frontend container `docker run --name tuva-empi-frontend -v $PWD:/app -p 127.0.0.1:3000:3000 -it tuva-empi-frontend`
 1. Then inside the container:
    ```
    > cd frontend
@@ -30,7 +30,7 @@
    > npm run dev
    ```
 1. `Ctrl-p` followed by `Ctrl-q` allows you to exit the container without stopping it
-1. To start the frontend container after stopping it: `docker start -i mpi-engine-frontend`
+1. To start the frontend container after stopping it: `docker start -i tuva-empi-frontend`
 
 ### Testing and formatting
 
@@ -45,5 +45,5 @@
 ### Troubleshooting
 
 1. Delete `node_modules` folder prior to running `npm install`
-1. Remove and restart docker container `docker rm mpi-engine-frontend` before building and starting the container.
+1. Remove and restart docker container `docker rm tuva-empi-frontend` before building and starting the container.
 1. Ensure docker login `docker login`

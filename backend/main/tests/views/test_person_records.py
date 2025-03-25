@@ -5,15 +5,15 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from main.s3 import ObjectDoesNotExist
-from main.services.mpi_engine.mpi_engine_service import InvalidPersonRecordFileFormat
+from main.services.empi.empi_service import InvalidPersonRecordFileFormat
 
 
 class PersonRecordsTestCase(TestCase):
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_validation_ok(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_validation_ok(self, mock_empi: Any) -> None:
         """Tests import_person_records request validation succeeds."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -25,11 +25,11 @@ class PersonRecordsTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(response.json(), {"job_id": "job_1"})
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_validation_invalid_content_type(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_validation_invalid_content_type(self, mock_empi: Any) -> None:
         """Tests import_person_records rejects content types other than application/json."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -47,13 +47,11 @@ class PersonRecordsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_validation_invalid_request_method(
-        self, mock_mpi_engine: Any
-    ) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_validation_invalid_request_method(self, mock_empi: Any) -> None:
         """Tests import_person_records rejects request methods besides POST."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -90,11 +88,11 @@ class PersonRecordsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_validation_invalid_json(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_validation_invalid_json(self, mock_empi: Any) -> None:
         """Tests import_person_records rejects request methods with invalid JSON."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -114,11 +112,11 @@ class PersonRecordsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_validation_missing_fields(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_validation_missing_fields(self, mock_empi: Any) -> None:
         """Tests import_person_records rejects request methods with missing fields."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -141,11 +139,11 @@ class PersonRecordsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_invalid_config_id(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_invalid_config_id(self, mock_empi: Any) -> None:
         """Tests import_person_records config_id validation fails."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -234,11 +232,11 @@ class PersonRecordsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_invalid_s3_uri(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_invalid_s3_uri(self, mock_empi: Any) -> None:
         """Tests import_person_records s3_uri validation fails."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.return_value = 1
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.return_value = 1
 
         url = reverse("import_person_records")
 
@@ -345,13 +343,11 @@ class PersonRecordsTestCase(TestCase):
         )
 
     @override_settings(DEBUG=False)
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_unexpected_internal_error(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_unexpected_internal_error(self, mock_empi: Any) -> None:
         """Tests import_person_records handles internal errors."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.side_effect = ValueError(
-            "Unexpected error"
-        )
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.side_effect = ValueError("Unexpected error")
 
         url = reverse("import_person_records")
 
@@ -370,14 +366,12 @@ class PersonRecordsTestCase(TestCase):
             )
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_invalid_file_format(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_invalid_file_format(self, mock_empi: Any) -> None:
         """Tests import_person_records handles invalid file format."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.side_effect = (
-            InvalidPersonRecordFileFormat(
-                "Incorrectly formatted person records due to test"
-            )
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.side_effect = InvalidPersonRecordFileFormat(
+            "Incorrectly formatted person records due to test"
         )
 
         url = reverse("import_person_records")
@@ -400,11 +394,11 @@ class PersonRecordsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.person_records.MPIEngineService")
-    def test_import_s3_object_not_found(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.person_records.EMPIService")
+    def test_import_s3_object_not_found(self, mock_empi: Any) -> None:
         """Tests import_person_records handles invalid file format."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.import_person_records.side_effect = ObjectDoesNotExist(
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.import_person_records.side_effect = ObjectDoesNotExist(
             "S3 object does not exist"
         )
 

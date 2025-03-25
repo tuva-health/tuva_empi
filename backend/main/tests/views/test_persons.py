@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from main.models import Person
-from main.services.mpi_engine.mpi_engine_service import (
+from main.services.empi.empi_service import (
     PersonDict,
     PersonRecordDict,
     PersonSummaryDict,
@@ -23,8 +23,8 @@ class PersonsTestCase(TestCase):
     # get_persons
     #
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_persons_ok_all_params(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_persons_ok_all_params(self, mock_empi: Any) -> None:
         """Tests get_persons succeeds (all query params)."""
         persons: list[PersonSummaryDict] = [
             {
@@ -34,8 +34,8 @@ class PersonsTestCase(TestCase):
                 "data_sources": ["ds1", "ds2"],
             }
         ]
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_persons.return_value = persons
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_persons.return_value = persons
 
         url = reverse("get_persons")
         query_params = {
@@ -48,7 +48,7 @@ class PersonsTestCase(TestCase):
         }
         response = self.client.get(url, query_params)
 
-        mock_mpi_engine_obj.get_persons.assert_called_once_with(
+        mock_empi_obj.get_persons.assert_called_once_with(
             **{**query_params, "person_id": "123"}
         )
         self.assertEqual(response.status_code, 200)
@@ -66,8 +66,8 @@ class PersonsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_persons_ok_no_params(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_persons_ok_no_params(self, mock_empi: Any) -> None:
         """Tests get_persons succeeds (no query params)."""
         persons: list[PersonSummaryDict] = [
             {
@@ -77,14 +77,14 @@ class PersonsTestCase(TestCase):
                 "data_sources": ["ds1", "ds2"],
             }
         ]
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_persons.return_value = persons
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_persons.return_value = persons
 
         url = reverse("get_persons")
         query_params: Mapping[str, str] = {}
         response = self.client.get(url, query_params)
 
-        mock_mpi_engine_obj.get_persons.assert_called_once_with(**query_params)
+        mock_empi_obj.get_persons.assert_called_once_with(**query_params)
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(
             response.json(),
@@ -100,12 +100,12 @@ class PersonsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_persons_ok_no_results(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_persons_ok_no_results(self, mock_empi: Any) -> None:
         """Tests get_persons succeeds (no persons)."""
         persons: list[PersonSummaryDict] = []
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_persons.return_value = persons
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_persons.return_value = persons
 
         url = reverse("get_persons")
         response = self.client.get(url, {})
@@ -146,11 +146,11 @@ class PersonsTestCase(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("error", response.json())
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_persons_internal_error(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_persons_internal_error(self, mock_empi: Any) -> None:
         """Tests get_persons handles unexpected internal errors."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_persons.side_effect = Exception("Unexpected error")
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_persons.side_effect = Exception("Unexpected error")
 
         url = reverse("get_persons")
         self.client.raise_request_exception = False
@@ -167,8 +167,8 @@ class PersonsTestCase(TestCase):
     # get_person
     #
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_person_ok(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_person_ok(self, mock_empi: Any) -> None:
         """Tests get_person succeeds."""
         person_id = uuid.uuid4()
         person_record: PersonRecordDict = {
@@ -199,14 +199,14 @@ class PersonsTestCase(TestCase):
             "version": 1,
             "records": [person_record],
         }
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_person.return_value = person
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_person.return_value = person
 
         url = reverse("get_person", args=["p_" + str(person_id)])
 
         response = self.client.get(url)
 
-        mock_mpi_engine_obj.get_person.assert_called_once_with(uuid=str(person_id))
+        mock_empi_obj.get_person.assert_called_once_with(uuid=str(person_id))
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(
             response.json(),
@@ -233,18 +233,18 @@ class PersonsTestCase(TestCase):
             },
         )
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_person_not_found(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_person_not_found(self, mock_empi: Any) -> None:
         """Tests get_person returns 404 when person does not exist."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_person.side_effect = Person.DoesNotExist()
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_person.side_effect = Person.DoesNotExist()
 
         person_id = uuid.uuid4()
         url = reverse("get_person", args=["p_" + str(person_id)])
 
         response = self.client.get(url)
 
-        mock_mpi_engine_obj.get_person.assert_called_once_with(uuid=str(person_id))
+        mock_empi_obj.get_person.assert_called_once_with(uuid=str(person_id))
         self.assertEqual(response.status_code, 404)
         self.assertDictEqual(
             response.json(),
@@ -319,11 +319,11 @@ class PersonsTestCase(TestCase):
             {"error": {"message": 'Method "DELETE" not allowed.'}},
         )
 
-    @patch("main.views.persons.MPIEngineService")
-    def test_get_person_internal_error(self, mock_mpi_engine: Any) -> None:
+    @patch("main.views.persons.EMPIService")
+    def test_get_person_internal_error(self, mock_empi: Any) -> None:
         """Tests get_person handles unexpected internal errors."""
-        mock_mpi_engine_obj = mock_mpi_engine.return_value
-        mock_mpi_engine_obj.get_person.side_effect = Exception("Unexpected error")
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.get_person.side_effect = Exception("Unexpected error")
 
         person_id = uuid.uuid4()
         url = reverse("get_person", args=["p_" + str(person_id)])
@@ -332,7 +332,7 @@ class PersonsTestCase(TestCase):
         response = self.client.get(url)
         self.client.raise_request_exception = True
 
-        mock_mpi_engine_obj.get_person.assert_called_once_with(uuid=str(person_id))
+        mock_empi_obj.get_person.assert_called_once_with(uuid=str(person_id))
         self.assertEqual(response.status_code, 500)
         self.assertIn("error", response.json())
         self.assertTrue(

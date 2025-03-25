@@ -4,7 +4,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from main.services.mpi_engine.mpi_engine_service import MPIEngineService
+from main.services.empi.empi_service import EMPIService
 from main.util.object_id import get_object_id
 from main.validators.splink_settings import SplinkSettingsSerializer
 from main.views.serializer import Serializer
@@ -25,7 +25,7 @@ def create_config(request: Request) -> Response:
     if serializer.is_valid(raise_exception=True):
         data = serializer.validated_data
 
-        config = MPIEngineService().create_config(data)
+        config = EMPIService().create_config(data)
 
         return Response(
             {"config_id": get_object_id(config.id, "Config")}, status=status.HTTP_200_OK

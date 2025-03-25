@@ -1,8 +1,8 @@
-name: mpi-engine-backend
+name: tuva-empi-backend
 
 services:
   localstack:
-    container_name: mpi-engine-s3
+    container_name: tuva-empi-s3
     # https://hub.docker.com/layers/localstack/localstack/s3-latest/images/sha256-018356a92323720b4b683372ef83e4fb143db933ae3355fbd4e851afef179e2c?context=explore
     image: localstack/localstack:s3-latest@sha256:b5758a58e8500838464a0ee971229379ac933482b57f9abb2f68ff22d55c3320
     ports:
@@ -15,11 +15,11 @@ services:
   db:
     # https://hub.docker.com/layers/library/postgres/16/images/sha256-295787823185868c4679563715b0a7a07309387f3836117f1b0984d1bfc2bd24
     image: postgres:16@sha256:e38a7fe2234174d0eb69b5467d346e1bb193c09f98adc229fc9df30fe364dd4a
-    container_name: mpi-engine-db
+    container_name: tuva-empi-db
     environment:
-      - POSTGRES_DB=mpi_engine
-      - POSTGRES_USER=mpi_engine
-      - POSTGRES_PASSWORD=mpi_engine
+      - POSTGRES_DB=tuva_empi
+      - POSTGRES_USER=tuva_empi
+      - POSTGRES_PASSWORD=tuva_empi
     volumes:
       - db-data:/var/lib/postgresql/data:cached
     networks:
@@ -27,18 +27,18 @@ services:
     ports:
       - 127.0.0.1:5432:5432
 
-  mpi-engine-backend:
+  tuva-empi-backend:
     build:
       context: .
-      dockerfile: mpi-engine-backend/Dockerfile
-    container_name: mpi-engine-backend
+      dockerfile: tuva-empi-backend/Dockerfile
+    container_name: tuva-empi-backend
     depends_on:
       - db
     stdin_open: true
     tty: true
     environment:
       - PYTHONUNBUFFERED=1
-      # MPI Engine configuration file
+      # Tuva EMPI configuration file
       - CONFIG_FILE=config/local.json
       # AWS config for the sCLI and Boto3
       - AWS_ENDPOINT_URL=http://localstack:4566
@@ -53,11 +53,11 @@ services:
     ports:
       - 127.0.0.1:8000:8000
 
-  mpi-engine-frontend:
+  tuva-empi-frontend:
     build:
       context: .
-      dockerfile: mpi-engine-frontend/Dockerfile
-    container_name: mpi-engine-frontend
+      dockerfile: tuva-empi-frontend/Dockerfile
+    container_name: tuva-empi-frontend
     stdin_open: true
     tty: true
     working_dir: /app

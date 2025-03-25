@@ -8,9 +8,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from main.s3 import ObjectDoesNotExist
-from main.services.mpi_engine.mpi_engine_service import (
+from main.services.empi.empi_service import (
+    EMPIService,
     InvalidPersonRecordFileFormat,
-    MPIEngineService,
 )
 from main.util.object_id import get_id, get_object_id, get_prefix, is_object_id
 from main.views.errors import validation_error_data
@@ -53,11 +53,11 @@ def import_person_records(request: Request) -> Response:
 
     if serializer.is_valid(raise_exception=True):
         data = serializer.validated_data
-        mpi_engine = MPIEngineService()
+        empi = EMPIService()
 
         try:
             # FIXME: Check if config exists and return 400 error if not
-            job_id = mpi_engine.import_person_records(
+            job_id = empi.import_person_records(
                 data["s3_uri"], get_id(data["config_id"])
             )
         except (ObjectDoesNotExist, InvalidPersonRecordFileFormat) as e:

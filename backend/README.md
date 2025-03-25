@@ -1,6 +1,6 @@
-# tuva-mpi-engine-backend
+# Tuva EMPI Backend
 
-The backend for the Tuva MPI Engine. It consists of a Django API and PostgreSQL database.
+The backend for Tuva EMPI. It consists of a Django API and PostgreSQL database.
 
 ## Development
 
@@ -25,7 +25,7 @@ The backend for the Tuva MPI Engine. It consists of a Django API and PostgreSQL 
 
 1. cd `.devcontainer`
 1. Build and run the backend app and DB Docker containers: `docker compose up -d`
-1. Attach to the backend app container: `docker attach mpi-engine-backend`
+1. Attach to the backend app container: `docker attach tuva-empi-backend`
 1. Then inside the app container:
    ```
    > cd backend
@@ -34,8 +34,8 @@ The backend for the Tuva MPI Engine. It consists of a Django API and PostgreSQL 
    > make run-dev
    ```
 1. `Ctrl-p` followed by `Ctrl-q` allows you to exit the container without stopping it
-1. To start the app container after stopping it: `docker start -i mpi-engine-app`
-1. To start and attach to the app container after restarting your system: `docker compose start` then `docker compose attach mpi-engine-backend`
+1. To start the app container after stopping it: `docker start -i tuva-empi-app`
+1. To start and attach to the app container after restarting your system: `docker compose start` then `docker compose attach tuva-empi-backend`
 
 ### Testing and formatting
 
@@ -66,15 +66,15 @@ Then, in another dev container terminal `cd backend` and run:
 
 #### Connecting to the DB directly
 
-When running locally, you can connect to the PGSQL database from a dev container terminal via: `PGPASSWORD=mpi_engine psql -h db -U mpi_engine`
+When running locally, you can connect to the PGSQL database from a dev container terminal via: `PGPASSWORD=tuva_empi psql -h db -U tuva_empi`
 
 #### Clearing the database
 
 If you'd like to start from scratch with Postgres, either delete the Docker volume where the PGSQL data is stored or drop and recreate the database:
 
-1. `PGPASSWORD=mpi_engine psql -h db -U mpi_engine postgres`
-1. `drop database mpi_engine`
-1. `create database mpi_engine`
+1. `PGPASSWORD=tuva_empi psql -h db -U tuva_empi postgres`
+1. `drop database tuva_empi`
+1. `create database tuva_empi`
 
 ### Migrations
 
