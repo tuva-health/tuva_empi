@@ -6,36 +6,12 @@ The backend for Tuva EMPI. It consists of a Django API and PostgreSQL database.
 
 ### Installation
 
-#### Prerequisites
+Inside the dev Docker container, you can run:
 
-1. Install Docker
-
-#### VS Code
-
-1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container.
-1. Then inside the dev container terminal:
-   ```
-   > cd backend
-   > make install-all
-   > make migrate
-   > make run-dev
-   ```
-
-#### Other IDEs
-
-1. cd `.devcontainer`
-1. Build and run the backend app and DB Docker containers: `docker compose up -d`
-1. Attach to the backend app container: `docker attach tuva-empi-backend`
-1. Then inside the app container:
-   ```
-   > cd backend
-   > make install-all
-   > make migrate
-   > make run-dev
-   ```
-1. `Ctrl-p` followed by `Ctrl-q` allows you to exit the container without stopping it
-1. To start the app container after stopping it: `docker start -i tuva-empi-app`
-1. To start and attach to the app container after restarting your system: `docker compose start` then `docker compose attach tuva-empi-backend`
+1. `cd backend`
+1. `make install-all`
+1. `make migrate`
+1. `make run-dev`
 
 ### Testing and formatting
 

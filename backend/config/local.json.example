@@ -9,5 +9,13 @@
     "django": {
         "debug": false,
         "secret_key": "django-insecure-$@j@kbe1r&e!g*%kz(#mwje1z+6$fs24m6h4rukhkmsi))l8vg"
-    }
+    },
+    "idp": {
+        "backend": "aws-cognito",
+        "aws_cognito_user_pool_id": "",
+        "jwt_header": "X-Forwarded-Access-Token",
+        "jwks_url": "",
+        "client_id": ""
+    },
+    "initial_setup": {"admin_email": ""}
 }

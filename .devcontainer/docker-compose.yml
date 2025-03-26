@@ -1,8 +1,7 @@
-name: tuva-empi-backend
+name: tuva-empi
 
 services:
   localstack:
-    container_name: tuva-empi-s3
     # https://hub.docker.com/layers/localstack/localstack/s3-latest/images/sha256-018356a92323720b4b683372ef83e4fb143db933ae3355fbd4e851afef179e2c?context=explore
     image: localstack/localstack:s3-latest@sha256:b5758a58e8500838464a0ee971229379ac933482b57f9abb2f68ff22d55c3320
     ports:
@@ -15,7 +14,6 @@ services:
   db:
     # https://hub.docker.com/layers/library/postgres/16/images/sha256-295787823185868c4679563715b0a7a07309387f3836117f1b0984d1bfc2bd24
     image: postgres:16@sha256:e38a7fe2234174d0eb69b5467d346e1bb193c09f98adc229fc9df30fe364dd4a
-    container_name: tuva-empi-db
     environment:
       - POSTGRES_DB=tuva_empi
       - POSTGRES_USER=tuva_empi
@@ -27,37 +25,36 @@ services:
     ports:
       - 127.0.0.1:5432:5432
 
-  tuva-empi-backend:
+  backend:
     build:
-      context: .
-      dockerfile: tuva-empi-backend/Dockerfile
-    container_name: tuva-empi-backend
+      context: backend
+      dockerfile: Dockerfile
     depends_on:
       - db
     stdin_open: true
     tty: true
     environment:
-      - PYTHONUNBUFFERED=1
+      PYTHONUNBUFFERED: 1
       # Tuva EMPI configuration file
-      - CONFIG_FILE=config/local.json
+      CONFIG_FILE: config/local.json
       # AWS config for the sCLI and Boto3
-      - AWS_ENDPOINT_URL=http://localstack:4566
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-      - AWS_DEFAULT_REGION=us-east-1
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
     working_dir: /app
     volumes:
       - ..:/app:cached
+      - ${AWS_CONFIG_FILE:-./backend/empty-aws-config}:/root/.aws/config
     networks:
       - app-network
     ports:
       - 127.0.0.1:8000:8000
 
-  tuva-empi-frontend:
+  frontend:
     build:
-      context: .
-      dockerfile: tuva-empi-frontend/Dockerfile
-    container_name: tuva-empi-frontend
+      context: frontend
+      dockerfile: Dockerfile
     stdin_open: true
     tty: true
     working_dir: /app
@@ -67,6 +64,59 @@ services:
       - app-network
     ports:
       - 127.0.0.1:3000:3000
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    networks:
+      - app-network
+    ports:
+      - 127.0.0.1:8080:8080
+    command: ["start-dev", "--hostname=http://localhost:8080", "--hostname-strict=false"]
+
+  keycloak-init:
+    build:
+      context: keycloak-init
+      dockerfile: Dockerfile
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_REALM: ${KC_REALM}
+      KC_CLIENT_ID: ${KC_CLIENT_ID}
+      KC_CLIENT_SECRET: ${KC_CLIENT_SECRET}
+      KC_CLIENT_REDIRECT_URL: http://localhost:9000/oauth2/callback
+      KC_USERNAME: ${KC_USERNAME}
+      KC_PASSWORD: ${KC_PASSWORD}
+    networks:
+      - app-network
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
+    restart: always
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:9000/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://backend:8000
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:9000
+      OAUTH2_PROXY_SCOPE: openid
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_WHITELIST_DOMAINS: localhost,backend
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: true
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: true
+      OAUTH2_PROXY_SKIP_OIDC_EMAIL_VERIFICATION: true
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL}
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+    networks:
+      - app-network
+    ports:
+      - 127.0.0.1:9000:9000
+    # I wasn't able to get things working without this
+    extra_hosts:
+      - "localhost:host-gateway"
 
 
 volumes:
