@@ -4,6 +4,7 @@ from typing import Literal, Optional, Union
 # Add prefixes to internal database IDs to help user's differentiate between IDs for different
 # resources. See https://docs.stripe.com/api for another example of this.
 object_id_prefixes = {
+    "User": "u",
     "Config": "cfg",
     "Job": "job",
     "Person": "p",

@@ -8,6 +8,26 @@ MATCH_UPDATE_LOCK_ID = 300
 TIMESTAMP_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.USTZH:TZM'
 
 
+class UserRole(models.TextChoices):
+    admin = "admin"
+    member = "member"
+
+
+class User(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    created = models.DateTimeField(db_default=TransactionNow())
+    updated = models.DateTimeField(db_default=TransactionNow())
+    # External identity provider user ID
+    # In AWS cognito, the sub attribute may or may not be a globally unique user identifier (e.g. unique between user pools)
+    # It is a UUID, so while practically globally unique, it may not have a verified constraint.
+    # Their docs say: "The sub attribute is a unique user identifier within each user pool."
+    # https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-attributes.html#cognito-user-pools-standard-attributes
+    idp_user_id = models.TextField(
+        unique=True
+    )  # unique implies that a btree index is created
+    role = models.TextField(choices=UserRole)
+
+
 class Config(models.Model):
     id = models.BigAutoField(primary_key=True)
     created = models.DateTimeField(db_default=TransactionNow())
@@ -197,8 +217,8 @@ class PersonAction(models.Model):
     person = models.ForeignKey(Person, on_delete=models.DO_NOTHING)
     person_record = models.ForeignKey(PersonRecord, on_delete=models.DO_NOTHING)
     type = models.TextField(choices=PersonActionType)
-    # External user ID
-    performed_by = models.TextField(null=True)
+    # Internal user ID
+    performed_by = models.ForeignKey(User, on_delete=models.DO_NOTHING, null=True)
 
 
 class SplinkResult(models.Model):
@@ -249,5 +269,5 @@ class MatchGroupAction(models.Model):
         SplinkResult, on_delete=models.DO_NOTHING, null=True
     )
     type = models.TextField(choices=MatchGroupActionType)
-    # External user ID
-    performed_by = models.TextField(null=True)
+    # Internal user ID
+    performed_by = models.ForeignKey(User, on_delete=models.DO_NOTHING, null=True)

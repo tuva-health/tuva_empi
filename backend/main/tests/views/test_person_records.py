@@ -4,8 +4,8 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from main.s3 import ObjectDoesNotExist
 from main.services.empi.empi_service import InvalidPersonRecordFileFormat
+from main.util.s3 import ObjectDoesNotExist
 
 
 class PersonRecordsTestCase(TestCase):
