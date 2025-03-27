@@ -1703,12 +1703,42 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         for record, person_id, person_updated, matched_or_reviewed in [
-            (self.person_record1, self.person1.id, match_event.created, match_event.created),
-            (self.person_record2, self.person2.id, match_event.created, match_event.created),
-            (self.person_record3, self.person3.id, match_event.created, match_event.created),
-            (self.person_record4, self.person4.id, match_event.created, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
+            (
+                self.person_record1,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record2,
+                self.person2.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record3,
+                self.person3.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record4,
+                self.person4.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record5,
+                self.person5.id,
+                self.person_record5.person_updated,
+                None,
+            ),
+            (
+                self.person_record6,
+                self.person6.id,
+                self.person_record6.person_updated,
+                None,
+            ),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
@@ -1851,12 +1881,42 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         for record, person_id, person_updated, matched_or_reviewed in [
-            (self.person_record1, self.person1.id, match_event.created, match_event.created),
-            (self.person_record2, self.person2.id, match_event.created, match_event.created),
-            (self.person_record3, self.person3.id, match_event.created, match_event.created),
-            (self.person_record4, self.person4.id, match_event.created, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
+            (
+                self.person_record1,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record2,
+                self.person2.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record3,
+                self.person3.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record4,
+                self.person4.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record5,
+                self.person5.id,
+                self.person_record5.person_updated,
+                None,
+            ),
+            (
+                self.person_record6,
+                self.person6.id,
+                self.person_record6.person_updated,
+                None,
+            ),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
@@ -2019,12 +2079,42 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         for record, person_id, person_updated, matched_or_reviewed in [
-            (self.person_record1, self.person1.id, match_event.created, match_event.created),
-            (self.person_record2, self.person1.id, match_event.created, match_event.created),
-            (self.person_record3, self.person2.id, match_event.created, match_event.created),
-            (self.person_record4, self.person4.id, match_event.created, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
+            (
+                self.person_record1,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record2,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record3,
+                self.person2.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record4,
+                self.person4.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record5,
+                self.person5.id,
+                self.person_record5.person_updated,
+                None,
+            ),
+            (
+                self.person_record6,
+                self.person6.id,
+                self.person_record6.person_updated,
+                None,
+            ),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
@@ -2212,12 +2302,42 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         for record, person_id, person_updated, matched_or_reviewed in [
-            (self.person_record1, self.person1.id, match_event.created, match_event.created),
-            (self.person_record2, self.person1.id, match_event.created, match_event.created),
-            (self.person_record3, self.person1.id, match_event.created, match_event.created),
-            (self.person_record4, self.person1.id, match_event.created, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
+            (
+                self.person_record1,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record2,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record3,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record4,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record5,
+                self.person5.id,
+                self.person_record5.person_updated,
+                None,
+            ),
+            (
+                self.person_record6,
+                self.person6.id,
+                self.person_record6.person_updated,
+                None,
+            ),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
@@ -2432,21 +2552,56 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
 
         for record, person_id, person_updated, matched_or_reviewed in [
             # person1
-            (self.person_record2, self.person1.id, match_event.created, match_event.created),
+            (
+                self.person_record2,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
             (person_record7, self.person1.id, match_event.created, match_event.created),
             (person_record8, self.person1.id, match_event.created, match_event.created),
             # person2
-            (self.person_record3, self.person2.id, match_event.created, match_event.created),
+            (
+                self.person_record3,
+                self.person2.id,
+                match_event.created,
+                match_event.created,
+            ),
             (person_record9, self.person2.id, match_event.created, match_event.created),
             # person3
-            (self.person_record1, self.person3.id, match_event.created, match_event.created),
+            (
+                self.person_record1,
+                self.person3.id,
+                match_event.created,
+                match_event.created,
+            ),
             # person4
-            (self.person_record4, self.person4.id, match_event.created, match_event.created),
-            (person_record10, self.person4.id, match_event.created, match_event.created),
+            (
+                self.person_record4,
+                self.person4.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                person_record10,
+                self.person4.id,
+                match_event.created,
+                match_event.created,
+            ),
             # person 5
-            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
+            (
+                self.person_record5,
+                self.person5.id,
+                self.person_record5.person_updated,
+                None,
+            ),
             # person 6
-            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
+            (
+                self.person_record6,
+                self.person6.id,
+                self.person_record6.person_updated,
+                None,
+            ),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
@@ -2683,12 +2838,42 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         for record, person_id, person_updated, matched_or_reviewed in [
-            (self.person_record1, self.person1.id, match_event.created, match_event.created),
-            (self.person_record2, self.person1.id, match_event.created, match_event.created),
-            (self.person_record3, new_persons[0].id, match_event.created, match_event.created),
-            (self.person_record4, new_persons[1].id, match_event.created, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
+            (
+                self.person_record1,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record2,
+                self.person1.id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record3,
+                new_persons[0].id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record4,
+                new_persons[1].id,
+                match_event.created,
+                match_event.created,
+            ),
+            (
+                self.person_record5,
+                self.person5.id,
+                self.person_record5.person_updated,
+                None,
+            ),
+            (
+                self.person_record6,
+                self.person6.id,
+                self.person_record6.person_updated,
+                None,
+            ),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
