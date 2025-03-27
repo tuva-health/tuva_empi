@@ -11,6 +11,7 @@ import {
   // Pencil,
   GripVertical,
   LoaderCircle,
+  Check,
 } from "lucide-react";
 import { getRoute, Route } from "@/lib/routes";
 import {
@@ -156,7 +157,14 @@ export const PersonRecordRow: React.FC<PersonRecordRowProps> = ({
         <TableCell>{record.birth_date}</TableCell>
         <TableCell>{record.city}</TableCell>
         <TableCell>{record.state}</TableCell>
-        <TableCell>{formattedPercentage}</TableCell>
+        {formattedPercentage && <TableCell>{formattedPercentage}</TableCell>}
+        <TableCell>
+          {record.matched_or_reviewed ? (
+            <Check className="h-4 w-4 text-emerald-700" data-testid="check" />
+          ) : (
+            <span className="font-normal text-foreground">New</span>
+          )}
+        </TableCell>
         <TableCell>
           <Button
             variant="ghost"
@@ -167,8 +175,13 @@ export const PersonRecordRow: React.FC<PersonRecordRowProps> = ({
         </TableCell>
       </TableRow>
       <TableRow className={record.expanded ? "" : "hidden"}>
-        <TableCell colSpan={7} className="bg-white hover:bg-white">
-          <PersonRecordRowDetail record={record} />
+        <TableCell
+          colSpan={formattedPercentage ? 9 : 8}
+          className="bg-white hover:bg-white"
+        >
+          <div data-testid="record-detail">
+            <PersonRecordRowDetail record={record} />
+          </div>
         </TableCell>
       </TableRow>
     </React.Fragment>
@@ -178,6 +191,7 @@ export const PersonRecordRow: React.FC<PersonRecordRowProps> = ({
 interface PersonRowProps {
   person: PersonWithMetadata;
   ndx: number;
+  matchMode: boolean;
   onExpandRecord: (
     personId: string,
     recordId: string,
@@ -193,6 +207,7 @@ interface PersonRowProps {
 const PersonRow: React.FC<PersonRowProps> = ({
   person,
   ndx,
+  matchMode,
   onExpandRecord,
   onRecordDrop,
   recordDraggable,
@@ -260,6 +275,7 @@ const PersonRow: React.FC<PersonRowProps> = ({
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
+        {matchMode && <TableCell className={`${bgClassNameMuted}`}></TableCell>}
         <TableCell className={`${bgClassNameMuted}`}></TableCell>
         <TableCell className={`${bgClassNameMuted}`}>
           <div className="w-[48px] h-[36px]"></div>
@@ -282,6 +298,28 @@ const PersonRow: React.FC<PersonRowProps> = ({
     </React.Fragment>
   );
 };
+
+interface TableHeaderProps {
+  matchMode: boolean;
+}
+
+export const RecordTableHeader: React.FC<TableHeaderProps> = ({
+  matchMode,
+}) => (
+  <TableHeader>
+    <TableRow className="pointer-events-none">
+      <TableHead className="w-[32px]"></TableHead>
+      <TableHead>Last Name</TableHead>
+      <TableHead>First Name</TableHead>
+      <TableHead>Birth Date</TableHead>
+      <TableHead>City</TableHead>
+      <TableHead>State</TableHead>
+      {matchMode && <TableHead>Match</TableHead>}
+      <TableHead>Status</TableHead>
+      <TableHead className="w-[64px]"></TableHead>
+    </TableRow>
+  </TableHeader>
+);
 
 export const RecordManager: React.FC = () => {
   const router = useRouter();
@@ -365,18 +403,7 @@ export const RecordManager: React.FC = () => {
         <div className="h-full w-full overflow-y-auto">
           <div className="border rounded">
             <Table>
-              <TableHeader>
-                <TableRow className="pointer-events-none">
-                  <TableHead className="w-[32px]"></TableHead>
-                  <TableHead>Last Name</TableHead>
-                  <TableHead>First Name</TableHead>
-                  <TableHead>Birth Date</TableHead>
-                  <TableHead>City</TableHead>
-                  <TableHead>State</TableHead>
-                  {matchMode && <TableHead>Match</TableHead>}
-                  <TableHead className="w-[64px]"></TableHead>
-                </TableRow>
-              </TableHeader>
+              <RecordTableHeader matchMode={matchMode} />
               <TableBody>
                 {Object.values(
                   matchMode
@@ -387,6 +414,7 @@ export const RecordManager: React.FC = () => {
                     key={person.id}
                     person={person}
                     ndx={ndx}
+                    matchMode={matchMode}
                     onExpandRecord={(
                       personId: string,
                       recordId: string,

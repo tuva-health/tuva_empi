@@ -1699,25 +1699,26 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.assertEqual(PersonRecord.objects.count(), 6)
 
         #
-        # PersonRecords should remain the same
+        # PersonRecords should be updated
         #
 
-        for record in [
-            self.person_record1,
-            self.person_record2,
-            self.person_record3,
-            self.person_record4,
-            self.person_record5,
-            self.person_record6,
+        for record, person_id, person_updated, matched_or_reviewed in [
+            (self.person_record1, self.person1.id, match_event.created, match_event.created),
+            (self.person_record2, self.person2.id, match_event.created, match_event.created),
+            (self.person_record3, self.person3.id, match_event.created, match_event.created),
+            (self.person_record4, self.person4.id, match_event.created, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
                     id=record.id,
-                    person_id=record.person_id,
-                    person_updated=record.person_updated,
+                    person_id=person_id,
+                    person_updated=person_updated,
+                    matched_or_reviewed=matched_or_reviewed,
                 ).count(),
                 1,
-                record.id,
+                list(PersonRecord.objects.values()),
             )
 
         #
@@ -1846,25 +1847,26 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.assertEqual(PersonRecord.objects.count(), 6)
 
         #
-        # PersonRecords should remain the same
+        # PersonRecords should be updated
         #
 
-        for record in [
-            self.person_record1,
-            self.person_record2,
-            self.person_record3,
-            self.person_record4,
-            self.person_record5,
-            self.person_record6,
+        for record, person_id, person_updated, matched_or_reviewed in [
+            (self.person_record1, self.person1.id, match_event.created, match_event.created),
+            (self.person_record2, self.person2.id, match_event.created, match_event.created),
+            (self.person_record3, self.person3.id, match_event.created, match_event.created),
+            (self.person_record4, self.person4.id, match_event.created, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
                     id=record.id,
-                    person_id=record.person_id,
-                    person_updated=record.person_updated,
+                    person_id=person_id,
+                    person_updated=person_updated,
+                    matched_or_reviewed=matched_or_reviewed,
                 ).count(),
                 1,
-                record.id,
+                list(PersonRecord.objects.values()),
             )
 
         #
@@ -2016,25 +2018,27 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         # PersonRecords should be updated
         #
 
-        for record, person_id, person_updated in [
-            (self.person_record1, self.person1.id, self.person_record1.person_updated),
-            (self.person_record2, self.person1.id, match_event.created),
-            (self.person_record3, self.person2.id, match_event.created),
-            (self.person_record4, self.person4.id, self.person_record4.person_updated),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        for record, person_id, person_updated, matched_or_reviewed in [
+            (self.person_record1, self.person1.id, match_event.created, match_event.created),
+            (self.person_record2, self.person1.id, match_event.created, match_event.created),
+            (self.person_record3, self.person2.id, match_event.created, match_event.created),
+            (self.person_record4, self.person4.id, match_event.created, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
                     id=record.id,
                     person_id=person_id,
                     person_updated=person_updated,
+                    matched_or_reviewed=matched_or_reviewed,
                 ).count(),
                 1,
                 (
                     record.id,
                     person_id,
                     person_updated,
+                    matched_or_reviewed,
                     list(PersonRecord.objects.values()),
                 ),
             )
@@ -2107,19 +2111,19 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     self.person_record4.id,
                 ],
             },
-            # person2 gets all the records
+            # person2 gets all the records removed
             {
                 "uuid": str(self.person2.uuid),
                 "version": self.person2.version,
                 "new_person_record_ids": [],
             },
-            # person3 gets all the records
+            # person3 gets all the records removed
             {
                 "uuid": str(self.person3.uuid),
                 "version": self.person3.version,
                 "new_person_record_ids": [],
             },
-            # person4 gets all the records
+            # person4 gets all the records removed
             {
                 "uuid": str(self.person4.uuid),
                 "version": self.person4.version,
@@ -2207,25 +2211,27 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         # PersonRecords should be updated
         #
 
-        for record, person_id, person_updated in [
-            (self.person_record1, self.person1.id, self.person_record1.person_updated),
-            (self.person_record2, self.person1.id, match_event.created),
-            (self.person_record3, self.person1.id, match_event.created),
-            (self.person_record4, self.person1.id, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        for record, person_id, person_updated, matched_or_reviewed in [
+            (self.person_record1, self.person1.id, match_event.created, match_event.created),
+            (self.person_record2, self.person1.id, match_event.created, match_event.created),
+            (self.person_record3, self.person1.id, match_event.created, match_event.created),
+            (self.person_record4, self.person1.id, match_event.created, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
                     id=record.id,
                     person_id=person_id,
                     person_updated=person_updated,
+                    matched_or_reviewed=matched_or_reviewed,
                 ).count(),
                 1,
                 (
                     record.id,
                     person_id,
                     person_updated,
+                    matched_or_reviewed,
                     list(PersonRecord.objects.values()),
                 ),
             )
@@ -2424,35 +2430,37 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         # PersonRecords should be updated
         #
 
-        for record, person_id, person_updated in [
+        for record, person_id, person_updated, matched_or_reviewed in [
             # person1
-            (self.person_record2, self.person1.id, match_event.created),
-            (person_record7, self.person1.id, person_record7.person_updated),
-            (person_record8, self.person1.id, match_event.created),
+            (self.person_record2, self.person1.id, match_event.created, match_event.created),
+            (person_record7, self.person1.id, match_event.created, match_event.created),
+            (person_record8, self.person1.id, match_event.created, match_event.created),
             # person2
-            (self.person_record3, self.person2.id, match_event.created),
-            (person_record9, self.person2.id, match_event.created),
+            (self.person_record3, self.person2.id, match_event.created, match_event.created),
+            (person_record9, self.person2.id, match_event.created, match_event.created),
             # person3
-            (self.person_record1, self.person3.id, match_event.created),
+            (self.person_record1, self.person3.id, match_event.created, match_event.created),
             # person4
-            (self.person_record4, self.person4.id, self.person_record4.person_updated),
-            (person_record10, self.person4.id, person_record10.person_updated),
+            (self.person_record4, self.person4.id, match_event.created, match_event.created),
+            (person_record10, self.person4.id, match_event.created, match_event.created),
             # person 5
-            (self.person_record5, self.person5.id, self.person_record5.person_updated),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
             # person 6
-            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
                     id=record.id,
                     person_id=person_id,
                     person_updated=person_updated,
+                    matched_or_reviewed=matched_or_reviewed,
                 ).count(),
                 1,
                 (
                     record.id,
                     person_id,
                     person_updated,
+                    matched_or_reviewed,
                     list(PersonRecord.objects.values()),
                 ),
             )
@@ -2674,25 +2682,27 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         # PersonRecords should be updated
         #
 
-        for record, person_id, person_updated in [
-            (self.person_record1, self.person1.id, self.person_record1.person_updated),
-            (self.person_record2, self.person1.id, match_event.created),
-            (self.person_record3, new_persons[0].id, match_event.created),
-            (self.person_record4, new_persons[1].id, match_event.created),
-            (self.person_record5, self.person5.id, self.person_record5.person_updated),
-            (self.person_record6, self.person6.id, self.person_record6.person_updated),
+        for record, person_id, person_updated, matched_or_reviewed in [
+            (self.person_record1, self.person1.id, match_event.created, match_event.created),
+            (self.person_record2, self.person1.id, match_event.created, match_event.created),
+            (self.person_record3, new_persons[0].id, match_event.created, match_event.created),
+            (self.person_record4, new_persons[1].id, match_event.created, match_event.created),
+            (self.person_record5, self.person5.id, self.person_record5.person_updated, None),
+            (self.person_record6, self.person6.id, self.person_record6.person_updated, None),
         ]:
             self.assertEqual(
                 PersonRecord.objects.filter(
                     id=record.id,
                     person_id=person_id,
                     person_updated=person_updated,
+                    matched_or_reviewed=matched_or_reviewed,
                 ).count(),
                 1,
                 (
                     record.id,
                     person_id,
                     person_updated,
+                    matched_or_reviewed,
                     list(PersonRecord.objects.values()),
                 ),
             )
