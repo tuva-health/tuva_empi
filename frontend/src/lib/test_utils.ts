@@ -1,6 +1,8 @@
 import { AppStore } from "./stores/types";
 
-export const createMockStore = (overrides: Partial<AppStore> = {}): AppStore => {
+export const createMockStore = (
+  overrides: Partial<AppStore> = {},
+): AppStore => {
   const defaultStore: AppStore = {
     personMatch: {
       dataSources: [],

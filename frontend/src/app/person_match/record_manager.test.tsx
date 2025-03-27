@@ -427,8 +427,12 @@ describe("RecordManager", () => {
       );
 
       // Update the mock store to reflect the state change by appending the new person
-      storeWithNewPerson.personMatch.currentPotentialMatches["test-match-1"].persons = {
-        ...storeWithNewPerson.personMatch.currentPotentialMatches["test-match-1"].persons,
+      storeWithNewPerson.personMatch.currentPotentialMatches[
+        "test-match-1"
+      ].persons = {
+        ...storeWithNewPerson.personMatch.currentPotentialMatches[
+          "test-match-1"
+        ].persons,
         "new-person-2": {
           id: "new-person-2",
           created: new Date(),
