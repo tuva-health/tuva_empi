@@ -1063,6 +1063,9 @@ class EMPIService:
                 self._update_person_records(
                     match_event, update_action_partials["add_record"]
                 )
+                self._update_person_records(
+                    match_event, update_action_partials["review_record"]
+                )
 
                 #
                 # Load generated PersonActions

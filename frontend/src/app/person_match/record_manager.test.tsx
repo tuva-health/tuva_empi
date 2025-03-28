@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import {
   PersonRecordRow,
   PersonRecordRowDetail,
   RecordManager,
+  RecordTableHeader,
 } from "./record_manager";
 import { PersonRecordWithMetadata } from "@/lib/stores/person_match_slice";
 import { Table, TableBody } from "@/components/ui/table";
@@ -46,10 +47,12 @@ const mockRecord: PersonRecordWithMetadata = {
   expanded: false,
 };
 
-const TableWrapper: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => (
+const TableWrapper: React.FC<{
+  children: React.ReactNode;
+  matchMode?: boolean;
+}> = ({ children, matchMode = false }) => (
   <Table>
+    <RecordTableHeader matchMode={matchMode} />
     <TableBody>{children}</TableBody>
   </Table>
 );
@@ -63,8 +66,9 @@ describe("PersonRecordRow", () => {
 
   const renderWithTable = (
     ui: React.ReactElement,
+    matchMode: boolean = false,
   ): ReturnType<typeof render> => {
-    return render(<TableWrapper>{ui}</TableWrapper>);
+    return render(<TableWrapper matchMode={matchMode}>{ui}</TableWrapper>);
   };
 
   it("should display rounded max match probability in table cell when provided", () => {
@@ -73,19 +77,30 @@ describe("PersonRecordRow", () => {
       highest_match_probability: 0.856,
     };
 
-    renderWithTable(<PersonRecordRow {...defaultProps} record={record} />);
+    renderWithTable(
+      <PersonRecordRow {...defaultProps} record={record} />,
+      true,
+    );
 
+    const headers = screen.getAllByRole("columnheader");
+    const matchHeaderIndex = headers.findIndex(
+      (header) => header.textContent === "Match",
+    );
     const cells = screen.getAllByRole("cell");
-    const matchCell = cells[6]; // Match probability is in the 7th cell
+    const matchCell = cells[matchHeaderIndex];
     expect(matchCell).toHaveTextContent("86%");
   });
 
   it("should not display max match probability when not provided", () => {
-    renderWithTable(<PersonRecordRow {...defaultProps} />);
+    renderWithTable(<PersonRecordRow {...defaultProps} />, true);
 
+    const headers = screen.getAllByRole("columnheader");
+    const matchHeaderIndex = headers.findIndex(
+      (header) => header.textContent === "Match",
+    );
     const cells = screen.getAllByRole("cell");
-    const matchCell = cells[6]; // Match probability is in the 7th cell
-    expect(matchCell).toBeEmptyDOMElement();
+    const matchCell = cells[matchHeaderIndex];
+    expect(matchCell).not.toHaveTextContent("86%");
   });
 
   it.each([
@@ -101,9 +116,16 @@ describe("PersonRecordRow", () => {
         highest_match_probability: input,
       };
 
-      renderWithTable(<PersonRecordRow {...defaultProps} record={record} />);
+      renderWithTable(
+        <PersonRecordRow {...defaultProps} record={record} />,
+        true,
+      );
+      const headers = screen.getAllByRole("columnheader");
+      const matchHeaderIndex = headers.findIndex(
+        (header) => header.textContent === "Match",
+      );
       const cells = screen.getAllByRole("cell");
-      const matchCell = cells[6]; // Match probability is in the 7th cell
+      const matchCell = cells[matchHeaderIndex];
       expect(matchCell).toHaveTextContent(expected);
     },
   );
@@ -115,11 +137,42 @@ describe("PersonRecordRow", () => {
       highest_match_probability: 0.856,
     };
 
-    renderWithTable(<PersonRecordRow {...defaultProps} record={record} />);
+    renderWithTable(
+      <PersonRecordRow {...defaultProps} record={record} />,
+      true,
+    );
 
-    const detailMatchText = screen.getByText("Match");
+    const detailView = screen.getByTestId("record-detail");
+    const detailMatchText = within(detailView).getByText("Match");
     expect(detailMatchText).toBeInTheDocument();
     expect(detailMatchText.nextElementSibling).toHaveTextContent("86%");
+  });
+
+  it("should display Check icon when matched_or_reviewed date exists", () => {
+    const record = {
+      ...mockRecord,
+      matched_or_reviewed: new Date(),
+    };
+
+    renderWithTable(
+      <PersonRecordRow {...defaultProps} record={record} />,
+      true,
+    );
+    const checkIcon = screen.getByTestId("check");
+    expect(checkIcon).toBeInTheDocument();
+  });
+
+  it("should display 'New' text when matched_or_reviewed date does not exist", () => {
+    const record = {
+      ...mockRecord,
+      matched_or_reviewed: null as unknown as Date,
+    };
+
+    renderWithTable(
+      <PersonRecordRow {...defaultProps} record={record} />,
+      true,
+    );
+    expect(screen.getByText("New")).toBeInTheDocument();
   });
 });
 
@@ -267,6 +320,7 @@ describe("RecordManager", () => {
       "City",
       "State",
       "Match",
+      "Status",
       "", // Empty header for expand/collapse column
     ];
 
@@ -289,6 +343,7 @@ describe("RecordManager", () => {
       "Birth Date",
       "City",
       "State",
+      "Status",
       "", // Empty header for expand/collapse column
     ];
 

@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Engine API",
+            "name": "BE: EMPI API",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/backend/manage.py",
@@ -17,7 +17,7 @@
             }
         },
         {
-            "name": "Matching Service",
+            "name": "BE: EMPIMatching Service",
             "type": "debugpy",
             "request": "launch",
             "program": "manage.py",
@@ -32,7 +32,7 @@
             }
         },
         {
-            "name": "Test Single",
+            "name": "BE: Test Single",
             "type": "debugpy",
             "request": "launch",
             "program": "manage.py",
@@ -45,6 +45,28 @@
             "justMyCode": true,
             "env": {
                 "CONFIG_FILE": "config/local.json"
+            }
+        },
+        {
+            "name": "FE: Next.js Server",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "npm run dev",
+            "cwd": "${workspaceFolder}/frontend",
+            "serverReadyAction": {
+                "pattern": "started server on .+, url: (https?://.+)",
+                "uriFormat": "%s",
+                "action": "debugWithChrome"
+            }
+        },
+        {
+            "name": "FE: Next.js Client",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/frontend",
+            "sourceMapPathOverrides": {
+                "webpack://_N_E/*": "${webRoot}/*"
             }
         }
     ],
