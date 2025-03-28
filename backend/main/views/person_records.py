@@ -7,7 +7,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from main.s3 import ObjectDoesNotExist
+from main.s3 import ObjectDoesNotExist, UploadError
 from main.services.empi.empi_service import (
     EMPIService,
     InvalidPersonRecordFileFormat,
@@ -17,9 +17,8 @@ from main.views.errors import validation_error_data
 from main.views.serializer import Serializer
 
 
-class ImportPersonRecordsRequest(Serializer):
-    s3_uri = serializers.CharField()
-    config_id = serializers.CharField()
+class S3URIValidatorMixin:
+    """Mixin for validating S3 URIs."""
 
     def validate_s3_uri(self, value: str) -> str:
         s3_uri_parsed = urlparse(value, allow_fragments=False)
@@ -37,6 +36,11 @@ class ImportPersonRecordsRequest(Serializer):
             return value
         else:
             raise serializers.ValidationError("Invalid S3 URI")
+
+
+class ImportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
+    s3_uri = serializers.CharField()
+    config_id = serializers.CharField()
 
     def validate_config_id(self, value: str) -> str:
         if value.startswith(get_prefix("Config") + "_") and is_object_id(value, "int"):
@@ -69,5 +73,32 @@ def import_person_records(request: Request) -> Response:
         return Response(
             {"job_id": get_object_id(job_id, "Job")}, status=status.HTTP_200_OK
         )
+
+    return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ExportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
+    s3_uri = serializers.CharField()
+
+
+@api_view(["POST"])
+@parser_classes([JSONParser])
+def export_person_records(request: Request) -> Response:
+    """Export person records to S3 in CSV format."""
+    serializer = ExportPersonRecordsRequest(data=request.data)
+
+    if serializer.is_valid(raise_exception=True):
+        data = serializer.validated_data
+        empi = EMPIService()
+
+        try:
+            empi.export_person_records(data["s3_uri"])
+        except UploadError as e:
+            return Response(
+                validation_error_data(details=[str(e)]),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({}, status=status.HTTP_200_OK)
 
     return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
