@@ -4,6 +4,9 @@
     "service": "tuva-empi-backend",
     "shutdownAction": "none",
     "workspaceFolder": "/app",
+    "mounts": [
+        "source=${localWorkspaceFolder}/.cursor/server/backend,target=/root/.cursor-server,type=bind,consistency=cached"
+    ],
     "customizations": {
         "vscode": {
             "settings": {
