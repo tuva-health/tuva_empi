@@ -84,6 +84,9 @@ def get_jwt_payload(
             raise AuthenticationFailed("Expected JWT payload to be object")
 
         return cast(dict[str, Any], payload)
+    except AuthenticationFailed as err:
+        LOGGER.exception(f"Failed to validate JWT: {err}")
+        raise
     except Exception as err:
         LOGGER.exception(f"Failed to validate JWT: {err}")
         raise AuthenticationFailed("Invalid JWT")
@@ -91,14 +94,7 @@ def get_jwt_payload(
 
 class JwtAuthentication(authentication.BaseAuthentication):
     def authenticate(self, request: Request) -> Optional[tuple[User, Any]]:
-        """Assigns User to request from JWT.
-
-        Does not verify JWT. That should be done by external identity provider
-        before the application receives the request.
-
-        Raises PermissionDenied if User cannot be found or there is an issue with
-        the JWT.
-        """
+        """Assigns User to request from JWT."""
         identity_service = IdentityService()
         jwt_config = identity_service.get_jwt_config()
         payload = get_jwt_payload(

@@ -17,7 +17,7 @@ class UserWithMetadata:
     id: int
     email: str
     role: UserRole
-    # FIXME: Add idp_user_id
+    idp_user_id: str
 
 
 class JwtConfigDict(TypedDict):
@@ -78,6 +78,7 @@ class IdentityService:
                         else ""
                     ),
                     role=UserRole(user.role) if user.role else None,
+                    idp_user_id=user.idp_user_id,
                 )
                 for user in User.objects.all()
             ]
