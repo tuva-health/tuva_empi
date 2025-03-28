@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import logging
 import uuid
@@ -1268,3 +1270,67 @@ class EMPIService:
                 ]
 
             return persons[0]
+
+    def export_person_records(self, s3_uri: str) -> None:
+        """Export person records to S3 in CSV format.
+
+        Args:
+            s3_uri: The S3 URI to export to.
+
+        Raises:
+            UploadError: If the upload fails.
+        """
+        # Get all person records
+        person_records = PersonRecord.objects.select_related("person").all()
+
+        # Create CSV content in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write headers
+        writer.writerow(
+            [
+                "source_person_id",
+                "data_source",
+                "first_name",
+                "last_name",
+                "sex",
+                "race",
+                "birth_date",
+                "death_date",
+                "social_security_number",
+                "address",
+                "city",
+                "state",
+                "zip_code",
+                "county",
+                "phone",
+                "person_uuid",
+            ]
+        )
+
+        # Write data
+        for record in person_records:
+            writer.writerow(
+                [
+                    record.source_person_id,
+                    record.data_source,
+                    record.first_name,
+                    record.last_name,
+                    record.sex,
+                    record.race,
+                    record.birth_date,
+                    record.death_date,
+                    record.social_security_number,
+                    record.address,
+                    record.city,
+                    record.state,
+                    record.zip_code,
+                    record.county,
+                    record.phone,
+                    record.person.uuid,
+                ]
+            )
+
+        # Upload to S3
+        self.s3.put_object(s3_uri, output.getvalue().encode("utf-8"))

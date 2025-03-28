@@ -4,12 +4,17 @@ from urllib.parse import urlparse
 
 import boto3  # type: ignore[import-untyped]
 import boto3.exceptions  # type: ignore[import-untyped]
+from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
 
 class ObjectDoesNotExist(Exception):
     """S3 object does not exist."""
+
+
+class UploadError(Exception):
+    """Error occurred while uploading to S3."""
 
 
 class S3Client:
@@ -47,3 +52,27 @@ class S3Client:
             msg = f"S3 object does not exist: {s3_uri}"
             logger.error(msg)
             raise ObjectDoesNotExist(msg) from e
+
+    def put_object(self, s3_uri: str, data: bytes) -> None:
+        """Upload data to S3.
+
+        Args:
+            s3_uri: The S3 URI to upload to.
+            data: The data to upload.
+
+        Raises:
+            UploadError: If the upload fails.
+        """
+        try:
+            logger.info(f"Uploading object: {s3_uri}")
+
+            s3_uri_parsed = urlparse(s3_uri, allow_fragments=False)
+            s3_bucket = s3_uri_parsed.netloc
+            s3_key = s3_uri_parsed.path.lstrip("/")
+
+            self.s3.put_object(Bucket=s3_bucket, Key=s3_key, Body=data)
+
+        except ClientError as e:
+            msg = f"Failed to upload to S3: {str(e)}"
+            logger.error(msg)
+            raise UploadError(msg) from e
