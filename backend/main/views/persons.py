@@ -1,6 +1,5 @@
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, parser_classes
-from rest_framework.parsers import JSONParser
+from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -30,7 +29,6 @@ class GetPersonsRequest(Serializer):
 
 
 @api_view(["GET"])
-@parser_classes([JSONParser])
 def get_persons(request: Request) -> Response:
     """Get/search for persons."""
     serializer = GetPersonsRequest(data=request.query_params)
@@ -73,7 +71,6 @@ class GetPersonRequest(Serializer):
 
 
 @api_view(["GET"])
-@parser_classes([JSONParser])
 def get_person(request: Request, id: int) -> Response:
     """Get Person by ID."""
     serializer = GetPersonRequest(data={**request.query_params, "person_id": id})
