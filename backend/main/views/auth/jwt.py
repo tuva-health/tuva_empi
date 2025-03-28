@@ -4,13 +4,12 @@ from typing import Any, Optional, cast
 
 import jwt
 import requests
-from django.core.exceptions import PermissionDenied
 from rest_framework import authentication
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from rest_framework.request import Request
 
-from main.config import get_config
 from main.models import User
-from main.services.identity.identity_service import IdentityService, UserWithMetadata
+from main.services.identity.identity_service import IdentityService
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ def get_key_for_kid(jwks_url: str, kid: str) -> Any:
     raise ValueError(f"No matching key found for kid: {kid}")
 
 
-def decode_jwt(jwks_url: str, token: str) -> Any:
+def decode_jwt(jwks_url: str, token: str, audience: Optional[str]) -> Any:
     """Decodes (and verifies) a JWT."""
     LOGGER.info("Decoding JWT")
 
@@ -59,33 +58,39 @@ def decode_jwt(jwks_url: str, token: str) -> Any:
 
     key = get_key_for_kid(jwks_url, kid)
 
-    return jwt.decode(token, key=key, algorithms=["RS256"])
+    return jwt.decode(
+        token,
+        key=key,
+        algorithms=["RS256"],
+        audience=audience,
+        options={"verify_aud": bool(audience)},
+    )
 
 
 def get_jwt_payload(
-    request: Request, jwt_header_name: str, jwks_url: str
+    request: Request, jwt_header_name: str, jwks_url: str, audience: Optional[str]
 ) -> dict[str, Any]:
     LOGGER.info(f"Getting JWT payload. jwks_url={jwks_url}")
 
     token = extract_token_from_request(request, jwt_header_name)
 
     if not token:
-        raise PermissionDenied("Missing JWT")
+        raise AuthenticationFailed("Missing JWT")
 
     try:
-        payload = decode_jwt(jwks_url, token)
+        payload = decode_jwt(jwks_url=jwks_url, token=token, audience=audience)
 
         if not isinstance(payload, dict):
-            raise PermissionDenied("Expected JWT payload to be object")
+            raise AuthenticationFailed("Expected JWT payload to be object")
 
         return cast(dict[str, Any], payload)
     except Exception as err:
         LOGGER.exception(f"Failed to validate JWT: {err}")
-        raise PermissionDenied("Invalid JWT")
+        raise AuthenticationFailed("Invalid JWT")
 
 
 class JwtAuthentication(authentication.BaseAuthentication):
-    def authenticate(self, request: Request) -> Optional[tuple[UserWithMetadata, Any]]:
+    def authenticate(self, request: Request) -> Optional[tuple[User, Any]]:
         """Assigns User to request from JWT.
 
         Does not verify JWT. That should be done by external identity provider
@@ -94,19 +99,25 @@ class JwtAuthentication(authentication.BaseAuthentication):
         Raises PermissionDenied if User cannot be found or there is an issue with
         the JWT.
         """
-        config = get_config()
-        jwt_header = config["idp"]["jwt_header"]
-        jwks_url = config["idp"]["jwks_url"]
-        client_id = config["idp"]["client_id"]
-        payload = get_jwt_payload(request, jwt_header, jwks_url)
+        identity_service = IdentityService()
+        jwt_config = identity_service.get_jwt_config()
+        payload = get_jwt_payload(
+            request=request,
+            jwt_header_name=jwt_config["jwt_header"],
+            jwks_url=jwt_config["jwks_url"],
+            audience=jwt_config["jwt_aud"],
+        )
 
         try:
-            if payload.get("client_id") != client_id:
+            payload_client_id = payload.get("client_id")
+
+            if payload_client_id and payload_client_id != jwt_config["client_id"]:
                 raise ValueError("Unexpected client_id claim")
 
             LOGGER.info("Found JWT payload, retrieving user by sub")
 
-            user = IdentityService().get_user_by_idp_user_id(payload["sub"])
+            # NOTE: We assume that the sub claim is a unique user ID
+            user = IdentityService().get_internal_user_by_idp_user_id(payload["sub"])
 
             return (user, None)
         except User.DoesNotExist:
@@ -115,3 +126,6 @@ class JwtAuthentication(authentication.BaseAuthentication):
         except Exception as err:
             LOGGER.exception(f"Unexpected authentication error: {err}")
             raise PermissionDenied("You do not have permission to perform this action.")
+
+    def authenticate_header(self, request: Request) -> str:
+        return "Bearer"

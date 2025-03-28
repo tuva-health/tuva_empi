@@ -2,7 +2,7 @@ import json
 import os
 from enum import Enum
 from functools import cache
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 
 class DbConfigDict(TypedDict):
@@ -20,14 +20,30 @@ class DjangoConfigDict(TypedDict):
 
 class IdpBackend(Enum):
     aws_cognito = "aws-cognito"
+    keycloak = "keycloak"
 
 
-class IdpConfigDict(TypedDict):
-    backend: Literal[IdpBackend.aws_cognito]
-    aws_cognito_user_pool_id: NotRequired[str]
+class AwsCognitoConfigDict(TypedDict):
+    cognito_user_pool_id: str
     jwt_header: str
     jwks_url: str
     client_id: str
+
+
+class KeycloakConfigDict(TypedDict):
+    server_url: str
+    realm: str
+    jwt_header: str
+    jwks_url: str
+    client_id: str
+    client_secret: str
+    jwt_aud: str
+
+
+class IdpConfigDict(TypedDict):
+    backend: Literal[IdpBackend.aws_cognito, IdpBackend.keycloak]
+    aws_cognito: AwsCognitoConfigDict
+    keycloak: KeycloakConfigDict
 
 
 class InitialSetupConfigDict(TypedDict):

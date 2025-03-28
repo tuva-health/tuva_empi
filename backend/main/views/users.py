@@ -1,12 +1,11 @@
 from rest_framework import serializers, status
-from rest_framework.parsers import JSONParser
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from main.models import UserRole
 from main.services.identity.identity_service import IdentityService
-from main.util.object_id import get_object_id
+from main.util.object_id import get_object_id, get_prefix, is_object_id
 from main.views.auth.permissions import IsAdmin
 from main.views.serializer import Serializer
 
@@ -15,59 +14,63 @@ class GetUsersRequest(Serializer):
     pass
 
 
-class CreateUserRequest(Serializer):
-    idp_user_id = serializers.CharField()
-    role = serializers.ChoiceField(choices=[role.value for role in UserRole])
+class UpdateUserRoleRequest(Serializer):
+    user_id = serializers.CharField()
+    role = serializers.ChoiceField(
+        choices=[role.value for role in UserRole], allow_null=True
+    )
+
+    def validate_user_id(self, value: str) -> str:
+        if value.startswith(get_prefix("User") + "_") and is_object_id(value, "int"):
+            return value
+        else:
+            raise serializers.ValidationError("Invalid User ID")
 
 
-class UserView(APIView):
-    parser_classes = [JSONParser]
-    permission_classes = [IsAdmin]
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def get_users(request: Request) -> Response:
+    """Get User objects."""
+    serializer = GetUsersRequest(data=request.data)
 
-    # FIXME: Add "all" filter to retrieve all users, even those not added to Tuva EMPI yet
-    def get_users(self, request: Request) -> Response:
-        """Get User objects."""
-        serializer = GetUsersRequest(data=request.data)
+    if serializer.is_valid(raise_exception=True):
+        users = IdentityService().get_users()
 
-        if serializer.is_valid(raise_exception=True):
-            users = IdentityService().get_users()
+        return Response(
+            {
+                "users": [
+                    {
+                        "id": get_object_id(user.id, "User"),
+                        "email": user.email,
+                        "role": user.role,
+                    }
+                    for user in users
+                ]
+            },
+            status=status.HTTP_200_OK,
+        )
 
-            return Response(
-                {
-                    "users": [
-                        {
-                            "id": get_object_id(user.id, "User"),
-                            "email": user.email,
-                            "role": user.role,
-                        }
-                        for user in users
-                    ]
-                },
-                status=status.HTTP_200_OK,
-            )
+    return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def add_user(self, request: Request) -> Response:
-        """Add User to Tuva EMPI."""
-        serializer = CreateUserRequest(data=request.data)
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def update_user(request: Request, id: int) -> Response:
+    """Update User role."""
+    serializer = UpdateUserRoleRequest(data={**request.query_params, "user_id": id})
 
-        if serializer.is_valid(raise_exception=True):
-            data = serializer.validated_data
+    if serializer.is_valid(raise_exception=True):
+        data = serializer.validated_data
 
-            user = IdentityService().add_user(
-                {"idp_user_id": data["idp_user_id"], "role": data["role"]}
-            )
+        # User role is the only thing that can be updated
+        IdentityService().update_user_role(
+            data["user_id"], UserRole(data["role"]) if data["role"] else None
+        )
 
-            return Response(
-                {"user": {"id": get_object_id(user.id, "User")}},
-                status=status.HTTP_200_OK,
-            )
+        # TODO: Ideally return the full user
+        return Response(
+            {"user": {"id": get_object_id(data["user_id"], "User")}},
+            status=status.HTTP_200_OK,
+        )
 
-        return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def get(self, request: Request) -> Response:
-        return self.get_users(request)
-
-    def post(self, request: Request) -> Response:
-        return self.add_user(request)
+    return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)

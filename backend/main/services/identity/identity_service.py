@@ -1,23 +1,15 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional, TypedDict
+from typing import Optional, TypedDict
 
 from django.db import transaction
+from django.utils import timezone
 
 from main.config import IdpBackend, get_config
 from main.models import User, UserRole
-from main.util.cognito import CognitoAttributeName, CognitoClient
-
-
-@dataclass
-class IdpUser:
-    id: str
-    email: str
-
-
-class PartialUserDict(TypedDict):
-    idp_user_id: str
-    role: UserRole
+from main.services.identity.cognito_provider import CognitoIdentityProvider
+from main.services.identity.identity_provider import IdpUser
+from main.services.identity.keycloak_provider import KeycloakIdentityProvider
 
 
 @dataclass
@@ -25,6 +17,14 @@ class UserWithMetadata:
     id: int
     email: str
     role: UserRole
+    # FIXME: Add idp_user_id
+
+
+class JwtConfigDict(TypedDict):
+    jwt_header: str
+    jwks_url: str
+    client_id: str
+    jwt_aud: Optional[str]
 
 
 class UserAlreadyExists(Exception):
@@ -32,134 +32,82 @@ class UserAlreadyExists(Exception):
 
 
 class IdentityService:
-    """This should likely be it's own completely separate application."""
-
     logger: logging.Logger
-    cognito: CognitoClient
 
-    def __init__(self, cognito: Optional[CognitoClient] = None) -> None:
+    def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
-        self.cognito = cognito or CognitoClient()
 
-    def get_idp_user(self, idp_user_id: str) -> IdpUser:
-        """Retrieves a user by their IDP ID.
+    def sync_users(self, idp_users: list[IdpUser]) -> None:
+        """Sync existing users from identity provider with Tuva EMPI users."""
+        # FIXME: Remove users if they are no longer returned from IDP
+        # Ideally, poll and sync users regularly
+        for idp_user in idp_users:
+            user, created = User.objects.get_or_create(idp_user_id=idp_user.id)
 
-        Throws an Exception if the user does not exist or more than one is returned.
-        """
-        config = get_config()
-
-        if config["idp"]["backend"] == IdpBackend.aws_cognito.value:
-            self.logger.info("Retrieving user from AWS Cognito IDP backend")
-            cognito_user_pool_id = config["idp"]["aws_cognito_user_pool_id"]
-            cognito_users = self.cognito.list_users_by_attr(
-                cognito_user_pool_id, CognitoAttributeName.sub, idp_user_id
-            )
-
-            if not cognito_users:
-                raise Exception(f"No user found with ID: {idp_user_id}")
-
-            if len(cognito_users) > 1:
-                raise Exception(
-                    f"Expected to find a single user, found {len(cognito_users)}"
-                )
-
-            cognito_user = cognito_users[0]
-
-            assert (
-                self.cognito.get_attr(cognito_user, CognitoAttributeName.sub)
-                == idp_user_id
-            )
-
-            return IdpUser(
-                id=self.cognito.get_attr(cognito_user, CognitoAttributeName.sub),
-                email=self.cognito.get_attr(cognito_user, CognitoAttributeName.email),
-            )
-        else:
-            raise Exception("IDP backend required")
-
-    def get_idp_users(self) -> list[IdpUser]:
-        config = get_config()
-
-        if config["idp"]["backend"] == IdpBackend.aws_cognito.value:
-            self.logger.info("Retrieving users from AWS Cognito IDP backend")
-            cognito_user_pool_id = config["idp"]["aws_cognito_user_pool_id"]
-            cognito_users = self.cognito.list_users(cognito_user_pool_id)
-
-            return [
-                IdpUser(
-                    id=self.cognito.get_attr(cognito_user, CognitoAttributeName.sub),
-                    email=self.cognito.get_attr(
-                        cognito_user, CognitoAttributeName.email
-                    ),
-                )
-                for cognito_user in cognito_users
-            ]
-        else:
-            raise Exception("IDP backend required")
-
-    def add_user(self, user: PartialUserDict) -> User:
-        """Add existing user from identity service to Tuva EMPI."""
-        self.logger.info("Adding user")
-
-        with transaction.atomic():
-            idp_user = IdentityService().get_idp_user(user["idp_user_id"])
-
-            if User.objects.filter(idp_user_id=idp_user.id).exists():
-                raise UserAlreadyExists()
-
-            user_added = User.objects.create(
-                idp_user_id=idp_user.id,
-                role=user["role"].value,
-            )
-            self.logger.info(f"Added user {user_added.id}")
-
-            return user_added
+            if created:
+                self.logger.info(f"Added user {user.id}")
 
     def get_users(self) -> list[UserWithMetadata]:
-        """Get Tuva EMPI users.
+        """Get Tuva EMPI users."""
+        config = get_config()
+        backend = config["idp"]["backend"]
 
-        Retrive users from identity service and only return those users that have been
-        added to Tuva EMPI.
-        """
-        idp_service = IdentityService()
-        idp_users = idp_service.get_idp_users()
-        users: list[UserWithMetadata] = []
+        if backend == IdpBackend.aws_cognito.value:
+            idp = CognitoIdentityProvider()
+        elif backend == IdpBackend.keycloak.value:
+            idp = KeycloakIdentityProvider()
+        else:
+            raise Exception("IDP backend required")
 
-        # FIXME: Soft-delete users if they are no longer returned from IDP or just don't return them
+        idp_users = idp.get_users()
+        idp_users_by_id: dict[str, IdpUser] = {}
+
         for idp_user in idp_users:
-            try:
-                user = User.objects.get(idp_user_id=idp_user.id)
-                users.append(
-                    UserWithMetadata(
-                        id=user.id,
-                        email=idp_user.email,
-                        role=UserRole(user.role),
-                    )
+            assert idp_user.id not in idp_users_by_id
+            idp_users_by_id[idp_user.id] = idp_user
+
+        with transaction.atomic():
+            self.sync_users(idp_users)
+
+            return [
+                UserWithMetadata(
+                    id=user.id,
+                    email=(
+                        idp_users_by_id[user.idp_user_id].email
+                        if user.idp_user_id in idp_users_by_id
+                        else ""
+                    ),
+                    role=UserRole(user.role) if user.role else None,
                 )
-            except User.DoesNotExist:
-                pass
+                for user in User.objects.all()
+            ]
 
-        return users
+    def update_user_role(self, user_id: int, role: Optional[UserRole]) -> None:
+        """Update role for Tuva EMPI user."""
+        self.logger.info("Adding user")
 
-    def get_user_by_idp_user_id(self, idp_user_id: str) -> UserWithMetadata:
-        """Get Tuva EMPI user by IDP user ID."""
-        idp_service = IdentityService()
-        idp_user = idp_service.get_idp_user(idp_user_id)
-
-        # FIXME: Soft-delete users if they are no longer returned from IDP or just don't return them
-        user = User.objects.get(idp_user_id=idp_user.id)
-
-        return UserWithMetadata(
-            id=user.id,
-            email=idp_user.email,
-            role=UserRole(user.role),
+        User.objects.filter(id=user_id).update(
+            role=role.value if role else None, updated=timezone.now()
         )
 
-    def remove_user(self, **kwargs: Any) -> tuple[int, dict[str, int]]:
-        """Remove user from Tuva EMPI."""
-        deleted_count, deleted_details = User.objects.get(**kwargs).delete()
+    def get_internal_user_by_idp_user_id(self, idp_user_id: str) -> User:
+        """Get Tuva EMPI user (without email) by IDP user ID."""
+        return User.objects.get(idp_user_id=idp_user_id)
 
-        if deleted_count == 0:
-            raise Exception("Failed to remove user")
+    def get_jwt_config(self) -> JwtConfigDict:
+        config = get_config()
+        backend = config["idp"]["backend"]
 
-        return (deleted_count, deleted_details)
+        if backend == IdpBackend.aws_cognito.value:
+            idp_config = config["idp"]["aws_cognito"]
+        elif backend == IdpBackend.keycloak.value:
+            idp_config = config["idp"]["keycloak"]
+        else:
+            raise Exception("IDP backend required")
+
+        return JwtConfigDict(
+            jwt_header=idp_config["jwt_header"],
+            jwks_url=idp_config["jwks_url"],
+            client_id=idp_config["client_id"],
+            jwt_aud=idp_config.get("jwt_aud"),
+        )

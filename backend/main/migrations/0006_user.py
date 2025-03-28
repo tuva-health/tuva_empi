@@ -32,10 +32,11 @@ class Migration(migrations.Migration):
                 (
                     "role",
                     models.TextField(
+                        null=True,
                         choices=[
                             ("admin", "Admin"),
                             ("member", "Member"),
-                        ]
+                        ],
                     ),
                 ),
             ],

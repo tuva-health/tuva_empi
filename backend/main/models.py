@@ -25,7 +25,7 @@ class User(models.Model):
     idp_user_id = models.TextField(
         unique=True
     )  # unique implies that a btree index is created
-    role = models.TextField(choices=UserRole)
+    role = models.TextField(choices=UserRole, null=True)
 
 
 class Config(models.Model):
