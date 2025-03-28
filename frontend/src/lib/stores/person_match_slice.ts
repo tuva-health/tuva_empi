@@ -106,6 +106,11 @@ export interface PersonMatchActions {
       expanded: boolean,
       potentialMatchId?: string,
     ) => void;
+
+    /**
+     * Creates a new person in the current potential match
+     */
+    createNewPerson: (potentialMatchId: string) => void;
   };
 }
 
@@ -304,8 +309,10 @@ export const createPersonMatchSlice =
         }
 
         for (const person of Object.values(potentialMatch.persons)) {
+          const isNewPerson = person.id.startsWith("new-person-");
+
           // If it's a new Person without any records, don't upload it
-          if (person.id === "" && person.records.length === 0) {
+          if (isNewPerson && person.records.length === 0) {
             continue;
           }
 
@@ -313,12 +320,14 @@ export const createPersonMatchSlice =
             new_person_record_ids: person.records.map((record) => record.id),
           };
 
-          if (person.id) {
-            update.id = person.id;
-          }
-
-          if (person.version) {
-            update.version = person.version;
+          // Only include id and version for existing persons (not new ones)
+          if (!isNewPerson) {
+            if (person.id) {
+              update.id = person.id;
+            }
+            if (person.version) {
+              update.version = person.version;
+            }
           }
 
           person_updates.push(update);
@@ -571,6 +580,35 @@ export const createPersonMatchSlice =
               ...r,
               expanded: false,
             })),
+          };
+        });
+      },
+
+      /**
+       * Creates a new person in the current potential match
+       */
+      createNewPerson: (potentialMatchId: string): void => {
+        set((state) => {
+          const potentialMatch =
+            state.personMatch.currentPotentialMatches[potentialMatchId];
+          if (!potentialMatch) {
+            console.error("Current PotentialMatch does not exist");
+            return;
+          }
+
+          // Find the next available index
+          const newPersonIds = Object.keys(potentialMatch.persons)
+            .filter((id) => id.startsWith("new-person-"))
+            .map((id) => parseInt(id.replace("new-person-", "")))
+            .sort((a, b) => b - a);
+
+          const nextIndex = newPersonIds.length > 0 ? newPersonIds[0] + 1 : 1;
+          const newPersonId = `new-person-${nextIndex}`;
+
+          potentialMatch.persons[newPersonId] = {
+            id: newPersonId,
+            created: new Date(),
+            records: [],
           };
         });
       },

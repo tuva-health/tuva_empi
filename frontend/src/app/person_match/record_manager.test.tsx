@@ -7,7 +7,8 @@ import {
 import { PersonRecordWithMetadata } from "@/lib/stores/person_match_slice";
 import { Table, TableBody } from "@/components/ui/table";
 import { type AppStore } from "@/lib/stores/types";
-
+import userEvent from "@testing-library/user-event";
+import { createMockStore } from "@/lib/test_utils";
 // Add mock imports
 jest.mock("next/navigation", () => ({
   useRouter: (): { push: jest.Mock } => ({
@@ -202,16 +203,22 @@ describe("PersonRecordRowDetail", () => {
 });
 
 describe("RecordManager", () => {
+  const mockStore = createMockStore();
+
+  beforeEach(() => {
+    mockUseAppStore.mockReset();
+    mockUseAppStore.mockImplementation(
+      <T,>(selector: (state: AppStore) => T): T => selector(mockStore),
+    );
+  });
+
   const setupMockState = (matchMode: boolean): void => {
     mockUseAppStore.mockImplementation(
       <T,>(selector: (state: AppStore) => T): T => {
-        const mockState: AppStore = {
+        const mockState = createMockStore({
           personMatch: {
-            dataSources: [],
+            ...mockStore.personMatch,
             matchMode,
-            searchTerms: {},
-            potentialMatchSummaries: {},
-            potentialMatches: {},
             currentPotentialMatches: matchMode
               ? {
                   "match-1": {
@@ -230,8 +237,6 @@ describe("RecordManager", () => {
                 }
               : {},
             selectedPotentialMatchId: matchMode ? "match-1" : null,
-            personSummaries: {},
-            persons: {},
             currentPersons: !matchMode
               ? {
                   "test-id": {
@@ -243,21 +248,8 @@ describe("RecordManager", () => {
                 }
               : {},
             selectedPersonId: !matchMode ? "test-id" : null,
-            fetchDataSources: jest.fn().mockResolvedValue(undefined),
-            setMatchMode: jest.fn(),
-            updateSearchTerms: jest.fn(),
-            clearSearchTerms: jest.fn(),
-            fetchSummaries: jest.fn().mockResolvedValue(undefined),
-            selectSummary: jest.fn(),
-            fetchPotentialMatch: jest.fn().mockResolvedValue(undefined),
-            resetCurrentPotentialMatch: jest.fn(),
-            fetchPerson: jest.fn().mockResolvedValue(undefined),
-            resetCurrentPerson: jest.fn(),
-            movePersonRecord: jest.fn(),
-            matchPersonRecords: jest.fn().mockResolvedValue(undefined),
-            setPersonRecordExpanded: jest.fn(),
           },
-        };
+        });
         return selector(mockState);
       },
     );
@@ -305,6 +297,155 @@ describe("RecordManager", () => {
 
     headers.forEach((header, index) => {
       expect(header.textContent).toBe(expectedHeaders[index]);
+    });
+  });
+
+  describe("Create New Person functionality", () => {
+    it("should show Create New Person button only when matchMode is true", () => {
+      // Set up store with matchMode true and a selected potential match
+      const storeWithMatchMode = createMockStore({
+        personMatch: {
+          ...mockStore.personMatch,
+          matchMode: true,
+          selectedPotentialMatchId: "test-match-1",
+          currentPotentialMatches: {
+            "test-match-1": {
+              id: "test-match-1",
+              version: 1,
+              persons: {},
+              results: [],
+            },
+          },
+        },
+      });
+
+      mockUseAppStore.mockImplementation(
+        <T,>(selector: (state: AppStore) => T): T =>
+          selector(storeWithMatchMode),
+      );
+
+      render(<RecordManager />);
+      expect(screen.getByText("+ Create New Person")).toBeInTheDocument();
+    });
+
+    it("should not show Create New Person button when matchMode is false", () => {
+      // Set up store with matchMode false
+      const storeWithoutMatchMode = createMockStore({
+        personMatch: {
+          ...mockStore.personMatch,
+          matchMode: false,
+          selectedPersonId: "test-person-1",
+          currentPersons: {
+            "test-person-1": {
+              id: "test-person-1",
+              version: 1,
+              created: new Date(),
+              records: [],
+            },
+          },
+        },
+      });
+
+      mockUseAppStore.mockImplementation(
+        <T,>(selector: (state: AppStore) => T): T =>
+          selector(storeWithoutMatchMode),
+      );
+
+      render(<RecordManager />);
+      expect(screen.queryByText("+ Create New Person")).not.toBeInTheDocument();
+    });
+
+    it("should create a new person row with 'New Person 1' when button is clicked", async () => {
+      // Set up store with matchMode true and a selected potential match
+      const storeWithMatchMode = createMockStore({
+        personMatch: {
+          ...mockStore.personMatch,
+          matchMode: true,
+          selectedPotentialMatchId: "test-match-1",
+          currentPotentialMatches: {
+            "test-match-1": {
+              id: "test-match-1",
+              version: 1,
+              persons: {},
+              results: [],
+            },
+          },
+        },
+      });
+
+      mockUseAppStore.mockImplementation(
+        <T,>(selector: (state: AppStore) => T): T =>
+          selector(storeWithMatchMode),
+      );
+
+      render(<RecordManager />);
+
+      const createButton = screen.getByText("+ Create New Person");
+      await userEvent.click(createButton);
+
+      expect(mockStore.personMatch.createNewPerson).toHaveBeenCalledWith(
+        "test-match-1",
+      );
+    });
+
+    it("should increment new person number for each additional person created", async () => {
+      // Set up store with matchMode true and a selected potential match with one new person
+      const storeWithNewPerson = createMockStore({
+        personMatch: {
+          ...mockStore.personMatch,
+          matchMode: true,
+          selectedPotentialMatchId: "test-match-1",
+          currentPotentialMatches: {
+            "test-match-1": {
+              id: "test-match-1",
+              version: 1,
+              persons: {
+                "new-person-1": {
+                  id: "new-person-1",
+                  created: new Date(),
+                  records: [],
+                },
+              },
+              results: [],
+            },
+          },
+        },
+      });
+
+      mockUseAppStore.mockImplementation(
+        <T,>(selector: (state: AppStore) => T): T =>
+          selector(storeWithNewPerson),
+      );
+
+      const { unmount } = render(<RecordManager />);
+
+      const createButton = screen.getByText("+ Create New Person");
+      await userEvent.click(createButton);
+
+      expect(mockStore.personMatch.createNewPerson).toHaveBeenCalledWith(
+        "test-match-1",
+      );
+
+      // Update the mock store to reflect the state change by appending the new person
+      storeWithNewPerson.personMatch.currentPotentialMatches[
+        "test-match-1"
+      ].persons = {
+        ...storeWithNewPerson.personMatch.currentPotentialMatches[
+          "test-match-1"
+        ].persons,
+        "new-person-2": {
+          id: "new-person-2",
+          created: new Date(),
+          records: [],
+        },
+      };
+
+      // Clean up previous render and re-render with new state
+      unmount();
+      render(<RecordManager />);
+
+      expect(screen.getByText("New Person 1")).toBeInTheDocument();
+      expect(screen.getByText("New Person 2")).toBeInTheDocument();
     });
   });
 });
