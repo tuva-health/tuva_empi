@@ -6,36 +6,13 @@ The backend for Tuva EMPI. It consists of a Django API and PostgreSQL database.
 
 ### Installation
 
-#### Prerequisites
+Inside the dev Docker container, you can run:
 
-1. Install Docker
-
-#### VS Code
-
-1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container.
-1. Then inside the dev container terminal:
-   ```
-   > cd backend
-   > make install-all
-   > make migrate
-   > make run-dev
-   ```
-
-#### Other IDEs
-
-1. cd `.devcontainer`
-1. Build and run the backend app and DB Docker containers: `docker compose up -d`
-1. Attach to the backend app container: `docker attach tuva-empi-backend`
-1. Then inside the app container:
-   ```
-   > cd backend
-   > make install-all
-   > make migrate
-   > make run-dev
-   ```
-1. `Ctrl-p` followed by `Ctrl-q` allows you to exit the container without stopping it
-1. To start the app container after stopping it: `docker start -i tuva-empi-app`
-1. To start and attach to the app container after restarting your system: `docker compose start` then `docker compose attach tuva-empi-backend`
+1. `cd backend`
+1. `make install-all`
+1. `make migrate`
+1. `make bootstrap`
+1. `make run-dev`
 
 ### Testing and formatting
 
@@ -57,8 +34,11 @@ In a dev container terminal:
 Then, in another dev container terminal `cd backend` and run:
 - Create a bucket:  `aws s3api create-bucket --bucket tuva-health-local`
 - Upload a person records file: `aws s3 cp main/tests/resources/tuva_synth/tuva_synth_clean.csv s3://tuva-health-local/raw-person-records.csv`
-- POST to the config endpoint: `http -v localhost:8000/api/v1/config splink_settings:=@main/tests/resources/tuva_synth/tuva_synth_model.json potential_match_threshold:=0.5 auto_match_threshold:=1`
-- POST to the import endpoint: `http -v localhost:8000/api/v1/person-records/import s3_uri=s3://tuva-health-local/raw-person-records.csv config_id=cfg_1`
+- Open a web browser on the host and visit `localhost:9000`
+- Sign-in (there is an initial test user created with username `user` and password `test1234`)
+- Once signed in you might see a 502 bad gateway if the frontend web server isn't running. That's okay, we just want to open the dev tools, go to cookies and copy the OAuth2 Proxy cookies (e.g. `_oauth2_proxy`) into environment variables in the dev container: `export AUTH_COOKIE="..."`. It's possible that there is more than one cookie.
+- POST to the config endpoint with cookie: `http -v oauth2-proxy:9000/api/v1/config splink_settings:=@main/tests/resources/tuva_synth/tuva_synth_model.json potential_match_threshold:=0.5 auto_match_threshold:=1 "Cookie:_oauth2_proxy=$AUTH_COOKIE"`
+- POST to the import endpoint: `http -v oauth2-proxy:9000/api/v1/person-records/import s3_uri=s3://tuva-health-local/raw-person-records.csv config_id=cfg_1 "Cookie:_oauth2_proxy=$AUTH_COOKIE"`
 
 #### Processing jobs
 
@@ -75,6 +55,35 @@ If you'd like to start from scratch with Postgres, either delete the Docker volu
 1. `PGPASSWORD=tuva_empi psql -h db -U tuva_empi postgres`
 1. `drop database tuva_empi`
 1. `create database tuva_empi`
+
+#### Testing with AWS Cognito
+
+If you'd like to connect to AWS Cognito, you will need to create an AWS account and setup a test AWS Cognito user pool. For the callback URL in cognito, use `http://localhost:9000/oauth2/callback`.
+
+If you are switching from Keycloak, it's best to remove all containers (`cd .devcontainer && docker compose down`) and clear your database by removing the DB volume.
+
+Then locally, you will need to disable localstack and load your AWS config.
+
+In `.env`:
+
+1. Uncomment `AWS_CONFIG_FILE`
+1. Comment out `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+1. Modify `OAUTH2_PROXY_OIDC_ISSUER_URL`, `OAUTH2_PROXY_SCOPE`, `OAUTH2_PROXY_CLIENT_ID` and `OAUTH2_PROXY_CLIENT_SECRET` to match your AWS Cognito test user pool settings (AWS Cognito doesn't support `offline_access` scope)
+
+In `local.json`:
+
+1. Set `idp.backend` to `aws-cognito`
+1. Set `cognito_user_pool_id`, `jwks_url` and `client_id` based on your AWS Cognito test user pool settings
+1. Set `initial_setup.admin_email` to a valid user's email address from your test user pool
+
+Then you can rebuild and reopen the backend docker container.
+
+In the dev container:
+
+1. Set AWS profile: `export AWS_PROFILE=...`
+1. Login to AWS: `aws sso login`
+1. Check your identity: `aws sts get-caller-identity`
+1. Then follow the steps in `Installation` to run migrations and bootstrap
 
 ### Migrations
 
