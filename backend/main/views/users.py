@@ -5,7 +5,7 @@ from rest_framework.response import Response
 
 from main.models import UserRole
 from main.services.identity.identity_service import IdentityService
-from main.util.object_id import get_object_id, get_prefix, is_object_id
+from main.util.object_id import get_id, get_object_id, get_prefix, is_object_id
 from main.views.auth.permissions import IsAdmin
 from main.views.serializer import Serializer
 
@@ -57,19 +57,19 @@ def get_users(request: Request) -> Response:
 @permission_classes([IsAdmin])
 def update_user(request: Request, id: int) -> Response:
     """Update User role."""
-    serializer = UpdateUserRoleRequest(data={**request.query_params, "user_id": id})
+    serializer = UpdateUserRoleRequest(data={**request.data, "user_id": id})
 
     if serializer.is_valid(raise_exception=True):
         data = serializer.validated_data
 
         # User role is the only thing that can be updated
         IdentityService().update_user_role(
-            data["user_id"], UserRole(data["role"]) if data["role"] else None
+            get_id(data["user_id"]), UserRole(data["role"]) if data["role"] else None
         )
 
         # TODO: Ideally return the full user
         return Response(
-            {"user": {"id": get_object_id(data["user_id"], "User")}},
+            {"user": {"id": data["user_id"]}},
             status=status.HTTP_200_OK,
         )
 
