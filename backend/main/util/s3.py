@@ -3,7 +3,6 @@ from typing import Iterator, cast
 from urllib.parse import urlparse
 
 import boto3  # type: ignore[import-untyped]
-import boto3.exceptions  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 

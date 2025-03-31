@@ -25,7 +25,6 @@ from main.models import (
     PersonRecordStaging,
     SplinkResult,
 )
-from main.s3 import S3Client
 from main.services.empi.empi_service import (
     DataSourceDict,
     EMPIService,
@@ -41,6 +40,7 @@ from main.services.empi.empi_service import (
     PredictionResultDict,
 )
 from main.util.dict import select_keys
+from main.util.s3 import S3Client
 
 
 class MockFSS3Client:

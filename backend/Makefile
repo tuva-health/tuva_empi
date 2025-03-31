@@ -1,4 +1,4 @@
-.PHONY: error install install-dev install-all migrate format lint dmypy check test report run run-dev worker configure configure-and-run
+.PHONY: error install install-dev install-all makemigrations migrate bootstrap format lint dmypy check test report run run-dev worker configure configure-and-run
 
 error:
 	@echo "Available commands: install, migrate, format, test, run"
@@ -17,6 +17,9 @@ makemigrations:
 
 migrate:
 	python manage.py migrate $(app)
+
+bootstrap:
+	python manage.py bootstrap
 
 format:
 	ruff format
@@ -54,7 +57,7 @@ worker: check
 configure:
 	DEST_CONFIG_FILE=config/deployment.json python configure.py
 
-run: migrate
+run: migrate bootstrap
 	gunicorn tuva_empi.wsgi:application --bind 0.0.0.0:8000
 
 configure-and-run: configure
