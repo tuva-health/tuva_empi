@@ -9,7 +9,6 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
-import json
 import logging
 import os
 import sys
@@ -17,10 +16,11 @@ from pathlib import Path
 
 import django_stubs_ext
 
+from main.config import get_config
+
 django_stubs_ext.monkeypatch()
 
-with open(os.environ["CONFIG_FILE"], "r") as f:
-    config = json.load(f)
+config = get_config()
 
 print("Tuva EMPI config profile: ", config["env"])
 
@@ -40,33 +40,45 @@ DEBUG = config["django"].get("debug", False)
 print("Debug mode enabled: ", DEBUG)
 
 ALLOWED_HOSTS: list[str] = config["django"].get(
-    "allowed_hosts", [".localhost", "127.0.0.1", "[::1]"]
+    "allowed_hosts", [".localhost", "127.0.0.1", "[::1]", "oauth2-proxy"]
 )
 
 # Application definition
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
+    # "django.contrib.sessions",
+    # "django.contrib.messages",
+    # "django.contrib.staticfiles",
     "rest_framework",
     "corsheaders",
     "main",
 ]
 
-REST_FRAMEWORK = {"EXCEPTION_HANDLER": "main.views.errors.exception_handler"}
+REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "main.views.errors.exception_handler",
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "main.views.auth.jwt.JwtAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["main.views.auth.permissions.IsMemberOrAdmin"],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+}
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
+    # "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
+    # "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -206,7 +218,7 @@ LOGGING = {
 }
 
 CORS_ALLOWED_ORIGINS = config["django"].get("cors_allowed_origins", [])
-CORS_ALLOW_ALL_ORIGINS = True if config.get("env") == "local" else False
+CORS_ALLOW_ALL_ORIGINS = True if config.get("env") in {"local", "ci"} else False
 
 if CORS_ALLOW_ALL_ORIGINS:
     print("**WARNING** CORS_ALLOW_ALL_ORIGINS set to True")
