@@ -2,8 +2,7 @@ import re
 from urllib.parse import urlparse
 
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, parser_classes
-from rest_framework.parsers import JSONParser
+from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -46,7 +45,6 @@ class ImportPersonRecordsRequest(Serializer):
 
 
 @api_view(["POST"])
-@parser_classes([JSONParser])
 def import_person_records(request: Request) -> Response:
     """Import person records from an S3 object."""
     serializer = ImportPersonRecordsRequest(data=request.data)
