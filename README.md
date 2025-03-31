@@ -17,19 +17,22 @@ To get started, you can copy the examples and edit them as needed (the default c
 1. `cp .devcontainer/.env.example .devcontainer/.env`
 1. `cp backend/config/local.json.example backend/config/local.json`
 
-Both of these files may contain sensitive information (e.g. when testing with AWS Cognito) and are thus added to the .gitignore by default. However, as an added precaution, it's nice to keep them outside of the repo (in case someone modifies the .gitignore or you revert to a commit before the files were ignored). This is easy to do with the `.env` file, but the Tuva EMPI config file needs to be accessible in the dev Docker container.
+Alternatively, there is a more secure approach to storing these configuration files. Both of these files may contain sensitive information (e.g. when testing with AWS Cognito) and are thus added to the .gitignore by default. However, as an added precaution, it's nice to keep them outside of the repo (in case someone modifies the .gitignore or you revert to a commit before the files were ignored). In order to do this, you can copy both files to a location outside the repo and symlink them (git doesn't follow symlinks):
 
-For the `.env` file, you can copy it to a location outside the repo and symlink it (git doesn't follow symlinks):
-
-1. `mkdir -p ~/.secret/tuva_empi`
-1. `cp .devcontainer/.env.example ~/.secret/tuva_empi/.env`
-1. `chmod 0600 ~/.secret/tuva_empi/.env`
-1. `ln -s ~/.secret/tuva_empi/.env .devcontainer/.env`
+- Create a directory to store secrets: `mkdir -p ~/.secret/tuva_empi`
+- Move `.env` and symlink it:
+  1. `cp .devcontainer/.env.example ~/.secret/tuva_empi/.env`
+  1. `chmod 0600 ~/.secret/tuva_empi/.env`
+  1. `ln -s ~/.secret/tuva_empi/.env .devcontainer/.env`
+- Move `local.json.example` and symlink it:
+  1. `cp backend/config/local.json.example ~/.secret/tuva_empi/local.json`
+  1. `chmod 0600 ~/.secret/tuva_empi/local.json`
+  1. `ln -s ~/.secret/tuva_empi/local.json backend/config/local.json`
 
 
 #### VS Code
 
-1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container.
+1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container. Otherwise you can open the command palette and run: `Dev Containers: Rebuild and Reopen in Container`
 1. You have the choice of choosing a backend or frontend dev container.
 
 #### Other IDEs

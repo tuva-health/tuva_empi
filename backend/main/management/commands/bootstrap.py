@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from main.config import get_config
-from main.models import UserRole
+from main.models import User, UserRole
 from main.services.identity.identity_service import IdentityService
 
 
@@ -9,6 +9,12 @@ class Command(BaseCommand):
     help = "Bootstrap the database with an initial admin user"
 
     def handle(self, *args: str, **options: str) -> None:
+        """Setup an initial admin for Tuva EMPI."""
+        # If there is already an admin, don't setup an initial admin
+        if User.objects.filter(role=UserRole.admin.value).count() > 0:
+            print("Tuva EMPI already bootstrapped")
+            return
+
         identity_service = IdentityService()
         admin_email = get_config()["initial_setup"]["admin_email"]
         users = [

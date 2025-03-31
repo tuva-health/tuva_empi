@@ -10,6 +10,8 @@ Inside the dev Docker container, you can run:
 1. `npm install`
 1. `npm run dev`
 
+Then, on the host, in a web browser, visit `localhost:9000`
+
 ### Testing and formatting
 
 1. Run formatter: `npm run format`

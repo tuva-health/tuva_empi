@@ -45,8 +45,16 @@ services:
     working_dir: /app
     volumes:
       - ..:/app:cached
+      # Persisting the pip cache saves time on pip install
       - backend-pip-cache:/root/.cache/pip
+      # If you'd like to mount an AWS config in order to access AWS
+      # APIs, you can. We don't mount it by default.
       - ${AWS_CONFIG_FILE:-./backend/empty-aws-config}:/root/.aws/config
+      # Mount potentially symlinked config file in order to access it
+      # from within the dev container. Mounting this will follow the symlink
+      # and mount the original file and the symlink in the container.
+      # See README.md
+      - ../backend/config/local.json:/app/backend/config/local.json
     networks:
       - app-network
     expose:
@@ -122,7 +130,7 @@ services:
       OAUTH2_PROXY_REDIRECT_URL: http://localhost:9000/oauth2/callback
       OAUTH2_PROXY_UPSTREAMS: http://nginx
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:9000
-      OAUTH2_PROXY_SCOPE: openid offline_access
+      OAUTH2_PROXY_SCOPE: ${OAUTH2_PROXY_SCOPE}
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       OAUTH2_PROXY_WHITELIST_DOMAINS: localhost,backend
       OAUTH2_PROXY_PASS_ACCESS_TOKEN: true
