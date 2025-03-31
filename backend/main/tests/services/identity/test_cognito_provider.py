@@ -2,20 +2,29 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from main.services.identity.cognito_provider import CognitoIdentityProvider
-from main.util.cognito import CognitoAttributeName
+from main.util.cognito import CognitoAttributeName, CognitoClient
 
 
 class CognitoIdentityProviderTests(TestCase):
-    @patch("main.util.cognito.CognitoClient.list_users")
-    @patch("main.util.cognito.CognitoClient.__init__", return_value=None)
-    def test_get_users(self, mock_init: Mock, mock_list_users: Mock) -> None:
+    @patch("main.services.identity.cognito_provider.get_config")
+    @patch("main.services.identity.cognito_provider.CognitoClient")
+    def test_get_users(self, mock_cognito_client: Mock, mock_get_config: Mock) -> None:
         mock_user = {
             "Attributes": [
                 {"Name": CognitoAttributeName.sub.value, "Value": "user-123"},
                 {"Name": CognitoAttributeName.email.value, "Value": "test@example.com"},
             ]
         }
-        mock_list_users.return_value = [mock_user]
+        mock_cognito_client.return_value.list_users.return_value = [mock_user]
+        mock_cognito_client.return_value.get_attr = CognitoClient.get_attr
+        mock_get_config.return_value = {
+            "idp": {
+                "backend": "aws-cognito",
+                "aws_cognito": {
+                    "cognito_user_pool_id": "test-user-pool-1234",
+                },
+            }
+        }
 
         provider = CognitoIdentityProvider()
 
