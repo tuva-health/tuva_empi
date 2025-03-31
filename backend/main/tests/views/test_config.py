@@ -1,8 +1,11 @@
 from typing import Any, Dict, List
+from unittest.mock import patch
 
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
+
+from main.models import User, UserRole
 
 
 class ConfigViewTests(APITestCase):
@@ -37,6 +40,14 @@ class ConfigViewTests(APITestCase):
             "auto_match_threshold": 0.95,
         }
         self.url = reverse("create_config")
+
+        user = User.objects.create(idp_user_id="1", role=UserRole.member.value)
+        auth_patcher = patch(
+            "main.views.auth.jwt.JwtAuthentication.authenticate",
+            return_value=(user, None),
+        )
+        auth_patcher.start()
+        self.addCleanup(auth_patcher.stop)
 
     def assertValidationError(self, response: Any) -> List[Dict[str, Any]]:
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

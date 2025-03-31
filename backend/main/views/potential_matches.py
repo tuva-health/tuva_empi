@@ -1,6 +1,5 @@
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, parser_classes
-from rest_framework.parsers import JSONParser
+from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
@@ -30,7 +29,6 @@ class GetPotentialMatchesRequest(Serializer):
 
 
 @api_view(["GET"])
-@parser_classes([JSONParser])
 def get_potential_matches(request: Request) -> Response:
     """Get/search for potential matches."""
     serializer = GetPotentialMatchesRequest(data=request.query_params)
@@ -73,7 +71,6 @@ class GetPotentialMatchRequest(Serializer):
 
 
 @api_view(["GET"])
-@parser_classes([JSONParser])
 def get_potential_match(request: Request, id: int) -> Response:
     """Get PotentialMatch by ID."""
     serializer = GetPotentialMatchRequest(

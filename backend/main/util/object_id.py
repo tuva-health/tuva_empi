@@ -4,6 +4,7 @@ from typing import Literal, Optional, Union
 # Add prefixes to internal database IDs to help user's differentiate between IDs for different
 # resources. See https://docs.stripe.com/api for another example of this.
 object_id_prefixes = {
+    "User": "u",
     "Config": "cfg",
     "Job": "job",
     "Person": "p",
@@ -74,10 +75,8 @@ def get_uuid(object_id: str) -> str:
 def is_object_id(object_id: str, type: Literal["int", "uuid"]) -> bool:
     try:
         if type == "int":
-            print(object_id, type)
             get_id(object_id)
         else:
-            print(object_id, type)
             get_uuid(object_id)
     except Exception:
         return False
