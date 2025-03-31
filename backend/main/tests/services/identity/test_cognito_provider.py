@@ -7,7 +7,8 @@ from main.util.cognito import CognitoAttributeName
 
 class CognitoIdentityProviderTests(TestCase):
     @patch("main.util.cognito.CognitoClient.list_users")
-    def test_get_users(self, mock_list_users: Mock) -> None:
+    @patch("main.util.cognito.CognitoClient.__init__", return_value=None)
+    def test_get_users(self, mock_init: Mock, mock_list_users: Mock) -> None:
         mock_user = {
             "Attributes": [
                 {"Name": CognitoAttributeName.sub.value, "Value": "user-123"},

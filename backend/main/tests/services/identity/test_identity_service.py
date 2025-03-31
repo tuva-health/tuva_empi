@@ -18,7 +18,7 @@ class IdentityServiceTests(TestCase):
         ]
 
     @patch("main.services.identity.identity_service.KeycloakIdentityProvider")
-    @patch("main.config.get_config")
+    @patch("main.services.identity.identity_service.get_config")
     def test_get_users_with_keycloak(
         self, mock_get_config: Mock, mock_keycloak: Mock
     ) -> None:
