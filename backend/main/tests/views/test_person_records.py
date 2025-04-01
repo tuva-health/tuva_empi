@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from main.s3 import ObjectDoesNotExist
+from main.s3 import ObjectDoesNotExist, UploadError
 from main.services.empi.empi_service import InvalidPersonRecordFileFormat
 
 
@@ -615,7 +615,7 @@ class ExportPersonRecordsTestCase(TestCase):
     def test_export_s3_upload_error(self, mock_empi: Any) -> None:
         """Tests export_person_records handles S3 upload errors."""
         mock_empi_obj = mock_empi.return_value
-        mock_empi_obj.export_person_records.side_effect = ObjectDoesNotExist(
+        mock_empi_obj.export_person_records.side_effect = UploadError(
             "Failed to upload to S3"
         )
 

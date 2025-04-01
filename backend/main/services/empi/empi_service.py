@@ -1284,12 +1284,13 @@ class EMPIService:
         person_records = PersonRecord.objects.select_related("person").all()
 
         # Create CSV content in memory
-        output = io.StringIO()
-        writer = csv.writer(output)
+        output = io.StringIO(newline="")
+        writer = csv.writer(output, lineterminator="\n")
 
         # Write headers
         writer.writerow(
             [
+                "person_uuid",
                 "source_person_id",
                 "data_source",
                 "first_name",
@@ -1305,7 +1306,6 @@ class EMPIService:
                 "zip_code",
                 "county",
                 "phone",
-                "person_uuid",
             ]
         )
 
@@ -1313,6 +1313,7 @@ class EMPIService:
         for record in person_records:
             writer.writerow(
                 [
+                    record.person.uuid,
                     record.source_person_id,
                     record.data_source,
                     record.first_name,
@@ -1328,7 +1329,6 @@ class EMPIService:
                     record.zip_code,
                     record.county,
                     record.phone,
-                    record.person.uuid,
                 ]
             )
 

@@ -1474,43 +1474,19 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         )
 
         self.person_record1 = PersonRecord.objects.create(
-            person=self.person1,
-            job=self.job,
-            source_person_id="1",
-            data_source="test1",
+            **self.common_person_record,
+            person_id=self.person1.id,
+            data_source="ds1",
             first_name="John",
             last_name="Doe",
-            sex="M",
-            race="W",
-            birth_date="2000-01-01",
-            death_date="",
-            social_security_number="123-45-6789",
-            address="123 Main St",
-            city="Anytown",
-            state="ST",
-            zip_code="12345",
-            county="County",
-            phone="555-555-5555",
         )
 
         self.person_record2 = PersonRecord.objects.create(
-            person=self.person2,
-            job=self.job,
-            source_person_id="2",
-            data_source="test2",
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="ds2",
             first_name="Jane",
             last_name="Smith",
-            sex="F",
-            race="W",
-            birth_date="2000-01-02",
-            death_date="",
-            social_security_number="987-65-4321",
-            address="456 Oak St",
-            city="Somewhere",
-            state="ST",
-            zip_code="54321",
-            county="County",
-            phone="555-555-5556",
         )
 
         self.person_record3 = PersonRecord.objects.create(
@@ -3950,14 +3926,6 @@ class ExportPersonRecordsTestCase(TestCase):
         self.empi = EMPIService()
         self.now = django_tz.now()
 
-        self.common_person_record = {
-            "source_person_id": "test",
-            "data_source": "test",
-            "first_name": "test",
-            "last_name": "test",
-            "birth_date": "2000-01-01",
-        }
-
         self.config = Config.objects.create(
             splink_settings={},
             potential_match_threshold=0.8,
@@ -3970,20 +3938,42 @@ class ExportPersonRecordsTestCase(TestCase):
             s3_uri="s3://test/test",
         )
 
-        self.person1 = Person.objects.create()
-        self.person2 = Person.objects.create()
+        self.common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "race": "W",
+        }
+
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job=self.job,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job=self.job,
+            version=1,
+            record_count=1,
+        )
 
         self.person_record1 = PersonRecord.objects.create(
-            person=self.person1,
-            job=self.job,
-            source_person_id="1",
+            **self.common_person_record,
+            person_id=self.person1.id,
             data_source="test1",
+            source_person_id="1",
             first_name="John",
             last_name="Doe",
             sex="M",
-            race="W",
-            birth_date="2000-01-01",
-            death_date="",
+            birth_date="1900-01-01",
+            death_date="3000-01-01",
             social_security_number="123-45-6789",
             address="123 Main St",
             city="Anytown",
@@ -3994,16 +3984,15 @@ class ExportPersonRecordsTestCase(TestCase):
         )
 
         self.person_record2 = PersonRecord.objects.create(
-            person=self.person2,
-            job=self.job,
-            source_person_id="2",
+            **self.common_person_record,
+            person_id=self.person2.id,
             data_source="test2",
+            source_person_id="2",
             first_name="Jane",
             last_name="Smith",
             sex="F",
-            race="W",
-            birth_date="2000-01-02",
-            death_date="",
+            birth_date="1900-01-02",
+            death_date="3000-01-02",
             social_security_number="987-65-4321",
             address="456 Oak St",
             city="Somewhere",
@@ -4028,6 +4017,7 @@ class ExportPersonRecordsTestCase(TestCase):
 
         # Verify CSV headers
         expected_headers = [
+            "person_uuid",
             "source_person_id",
             "data_source",
             "first_name",
@@ -4043,7 +4033,6 @@ class ExportPersonRecordsTestCase(TestCase):
             "zip_code",
             "county",
             "phone",
-            "person_uuid",
         ]
         self.assertEqual(csv_content[0].split(","), expected_headers)
 
@@ -4052,43 +4041,43 @@ class ExportPersonRecordsTestCase(TestCase):
         self.assertEqual(len(data_rows), 2)
 
         # Sort rows by source_person_id for consistent comparison
-        data_rows.sort(key=lambda x: x[0])
+        data_rows.sort(key=lambda x: x[1])
 
         # Verify first record
-        self.assertEqual(data_rows[0][0], "1")  # source_person_id
-        self.assertEqual(data_rows[0][1], "test1")  # data_source
-        self.assertEqual(data_rows[0][2], "John")  # first_name
-        self.assertEqual(data_rows[0][3], "Doe")  # last_name
-        self.assertEqual(data_rows[0][4], "M")  # sex
-        self.assertEqual(data_rows[0][5], "W")  # race
-        self.assertEqual(data_rows[0][6], "2000-01-01")  # birth_date
-        self.assertEqual(data_rows[0][7], "")  # death_date
-        self.assertEqual(data_rows[0][8], "123-45-6789")  # social_security_number
-        self.assertEqual(data_rows[0][9], "123 Main St")  # address
-        self.assertEqual(data_rows[0][10], "Anytown")  # city
-        self.assertEqual(data_rows[0][11], "ST")  # state
-        self.assertEqual(data_rows[0][12], "12345")  # zip_code
-        self.assertEqual(data_rows[0][13], "County")  # county
-        self.assertEqual(data_rows[0][14], "555-555-5555")  # phone
-        self.assertEqual(data_rows[0][15], str(self.person1.uuid))  # person_uuid
+        self.assertEqual(data_rows[0][0], str(self.person1.uuid))  # person_uuid
+        self.assertEqual(data_rows[0][1], "1")  # source_person_id
+        self.assertEqual(data_rows[0][2], "test1")  # data_source
+        self.assertEqual(data_rows[0][3], "John")  # first_name
+        self.assertEqual(data_rows[0][4], "Doe")  # last_name
+        self.assertEqual(data_rows[0][5], "M")  # sex
+        self.assertEqual(data_rows[0][6], "W")  # race
+        self.assertEqual(data_rows[0][7], "1900-01-01")  # birth_date
+        self.assertEqual(data_rows[0][8], "3000-01-01")  # death_date
+        self.assertEqual(data_rows[0][9], "123-45-6789")  # social_security_number
+        self.assertEqual(data_rows[0][10], "123 Main St")  # address
+        self.assertEqual(data_rows[0][11], "Anytown")  # city
+        self.assertEqual(data_rows[0][12], "ST")  # state
+        self.assertEqual(data_rows[0][13], "12345")  # zip_code
+        self.assertEqual(data_rows[0][14], "County")  # county
+        self.assertEqual(data_rows[0][15], "555-555-5555")  # phone
 
         # Verify second record
-        self.assertEqual(data_rows[1][0], "2")  # source_person_id
-        self.assertEqual(data_rows[1][1], "test2")  # data_source
-        self.assertEqual(data_rows[1][2], "Jane")  # first_name
-        self.assertEqual(data_rows[1][3], "Smith")  # last_name
-        self.assertEqual(data_rows[1][4], "F")  # sex
-        self.assertEqual(data_rows[1][5], "W")  # race
-        self.assertEqual(data_rows[1][6], "2000-01-02")  # birth_date
-        self.assertEqual(data_rows[1][7], "")  # death_date
-        self.assertEqual(data_rows[1][8], "987-65-4321")  # social_security_number
-        self.assertEqual(data_rows[1][9], "456 Oak St")  # address
-        self.assertEqual(data_rows[1][10], "Somewhere")  # city
-        self.assertEqual(data_rows[1][11], "ST")  # state
-        self.assertEqual(data_rows[1][12], "54321")  # zip_code
-        self.assertEqual(data_rows[1][13], "County")  # county
-        self.assertEqual(data_rows[1][14], "555-555-5556")  # phone
-        self.assertEqual(data_rows[1][15], str(self.person2.uuid))  # person_uuid
+        self.assertEqual(data_rows[1][0], str(self.person2.uuid))  # person_uuid
+        self.assertEqual(data_rows[1][1], "2")  # source_person_id
+        self.assertEqual(data_rows[1][2], "test2")  # data_source
+        self.assertEqual(data_rows[1][3], "Jane")  # first_name
+        self.assertEqual(data_rows[1][4], "Smith")  # last_name
+        self.assertEqual(data_rows[1][5], "F")  # sex
+        self.assertEqual(data_rows[1][6], "W")  # race
+        self.assertEqual(data_rows[1][7], "1900-01-02")  # birth_date
+        self.assertEqual(data_rows[1][8], "3000-01-02")  # death_date
+        self.assertEqual(data_rows[1][9], "987-65-4321")  # social_security_number
+        self.assertEqual(data_rows[1][10], "456 Oak St")  # address
+        self.assertEqual(data_rows[1][11], "Somewhere")  # city
+        self.assertEqual(data_rows[1][12], "ST")  # state
+        self.assertEqual(data_rows[1][13], "54321")  # zip_code
+        self.assertEqual(data_rows[1][14], "County")  # county
+        self.assertEqual(data_rows[1][15], "555-555-5556")  # phone
 
     @patch("main.s3.S3Client.put_object")
     def test_export_empty(self, mock_put_object: Any) -> None:
@@ -4109,6 +4098,7 @@ class ExportPersonRecordsTestCase(TestCase):
         # Verify only headers are present
         self.assertEqual(len(csv_content), 1)
         expected_headers = [
+            "person_uuid",
             "source_person_id",
             "data_source",
             "first_name",
@@ -4124,7 +4114,6 @@ class ExportPersonRecordsTestCase(TestCase):
             "zip_code",
             "county",
             "phone",
-            "person_uuid",
         ]
         self.assertEqual(csv_content[0].split(","), expected_headers)
 
