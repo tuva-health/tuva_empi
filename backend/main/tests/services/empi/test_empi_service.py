@@ -24,6 +24,7 @@ from main.models import (
     PersonRecord,
     PersonRecordStaging,
     SplinkResult,
+    User,
 )
 from main.services.empi.empi_service import (
     DataSourceDict,
@@ -1386,6 +1387,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
     result1: SplinkResult
     result2: SplinkResult
     result3: SplinkResult
+    user: User
 
     def setUp(self) -> None:
         self.maxDiff = None
@@ -1568,6 +1570,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             person_record_r_id=self.person_record6.id,
             data={},
         )
+        self.user = User.objects.create()
 
     def assert_match_group_updates(
         self,
@@ -1619,7 +1622,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         )
 
     def assert_match_group_action_details(
-        self, match_group: MatchGroup, match_event: MatchEvent
+        self, match_group: MatchGroup, match_event: MatchEvent, performed_by: User
     ) -> None:
         """Assert that manual-match MatchGroupAction has certain fields."""
         self.assertEqual(
@@ -1628,8 +1631,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 match_group_id=match_group.id,
                 splink_result=None,
                 type=MatchGroupActionType.match,
-                # FIXME: Should be external user ID
-                performed_by=None,
+                performed_by_id=performed_by.id,
             ).count(),
             1,
         )
@@ -1641,7 +1643,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_updates: list[PersonUpdateDict] = []
 
         match_event = self.empi.match_person_records(
-            match["id"], match["version"], person_updates
+            match["id"], match["version"], person_updates, self.user
         )
 
         #
@@ -1747,8 +1749,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     person_id=person_id,
                     person_record_id=person_record_id,
                     type=PersonActionType.review,
-                    # FIXME: Should be external user ID
-                    performed_by=None,
+                    performed_by_id=self.user.id,
                 ).count(),
                 1,
                 (person_id, person_record_id),
@@ -1759,7 +1760,9 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         self.assertEqual(MatchGroupAction.objects.count(), 1)
-        self.assert_match_group_action_details(self.match_group1, match_event)
+        self.assert_match_group_action_details(
+            self.match_group1, match_event, self.user
+        )
 
     def test_match_no_changes(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -1775,7 +1778,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         ]
 
         match_event = self.empi.match_person_records(
-            match["id"], match["version"], person_updates
+            match["id"], match["version"], person_updates, self.user
         )
 
         #
@@ -1894,8 +1897,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     person_id=person_id,
                     person_record_id=person_record_id,
                     type=PersonActionType.review,
-                    # FIXME: Should be external user ID
-                    performed_by=None,
+                    performed_by_id=self.user.id,
                 ).count(),
                 1,
                 (person_id, person_record_id),
@@ -1906,7 +1908,9 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         self.assertEqual(MatchGroupAction.objects.count(), 1)
-        self.assert_match_group_action_details(self.match_group1, match_event)
+        self.assert_match_group_action_details(
+            self.match_group1, match_event, self.user
+        )
 
     def test_match_changes(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -1938,7 +1942,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         ]
 
         match_event = self.empi.match_person_records(
-            match["id"], match["version"], person_updates
+            match["id"], match["version"], person_updates, self.user
         )
 
         #
@@ -2069,8 +2073,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     person_id=person_id,
                     person_record_id=person_record_id,
                     type=type,
-                    # FIXME: Should be external user ID
-                    performed_by=None,
+                    performed_by_id=self.user.id,
                 ).count(),
                 1,
                 (
@@ -2089,7 +2092,9 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         self.assertEqual(MatchGroupAction.objects.count(), 1)
-        self.assert_match_group_action_details(self.match_group1, match_event)
+        self.assert_match_group_action_details(
+            self.match_group1, match_event, self.user
+        )
 
     def test_match_changes_merge(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -2128,7 +2133,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         ]
 
         match_event = self.empi.match_person_records(
-            match["id"], match["version"], person_updates
+            match["id"], match["version"], person_updates, self.user
         )
 
         #
@@ -2261,8 +2266,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     person_id=person_id,
                     person_record_id=person_record_id,
                     type=type,
-                    # FIXME: Should be external user ID
-                    performed_by=None,
+                    performed_by_id=self.user.id,
                 ).count(),
                 1,
                 (
@@ -2281,7 +2285,9 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         self.assertEqual(MatchGroupAction.objects.count(), 1)
-        self.assert_match_group_action_details(self.match_group1, match_event)
+        self.assert_match_group_action_details(
+            self.match_group1, match_event, self.user
+        )
 
     def test_match_changes_linked_records(self) -> None:
         person_record7 = PersonRecord.objects.create(
@@ -2346,7 +2352,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         ]
 
         match_event = self.empi.match_person_records(
-            match["id"], match["version"], person_updates
+            match["id"], match["version"], person_updates, self.user
         )
 
         #
@@ -2498,8 +2504,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     person_id=person_id,
                     person_record_id=person_record_id,
                     type=type,
-                    # FIXME: Should be external user ID
-                    performed_by=None,
+                    performed_by_id=self.user.id,
                 ).count(),
                 1,
                 (
@@ -2518,7 +2523,9 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         self.assertEqual(MatchGroupAction.objects.count(), 1)
-        self.assert_match_group_action_details(self.match_group1, match_event)
+        self.assert_match_group_action_details(
+            self.match_group1, match_event, self.user
+        )
 
     def test_match_new_persons(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -2563,7 +2570,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         ]
 
         match_event = self.empi.match_person_records(
-            match["id"], match["version"], person_updates
+            match["id"], match["version"], person_updates, self.user
         )
 
         #
@@ -2728,8 +2735,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                     person_id=person_id,
                     person_record_id=person_record_id,
                     type=type,
-                    # FIXME: Should be external user ID
-                    performed_by=None,
+                    performed_by_id=self.user.id,
                 ).count(),
                 1,
                 (
@@ -2748,7 +2754,9 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         #
 
         self.assertEqual(MatchGroupAction.objects.count(), 1)
-        self.assert_match_group_action_details(self.match_group1, match_event)
+        self.assert_match_group_action_details(
+            self.match_group1, match_event, self.user
+        )
 
     def test_validation_existing_person_fields(self) -> None:
         """A PersonUpdate for an existing Person should specify a version."""
@@ -2766,7 +2774,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "A PersonUpdate for an existing Person should specify a version",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_new_person_fields(self) -> None:
@@ -2785,7 +2793,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "A PersonUpdate for a new Person should not specify a version",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_new_person_missing_records(self) -> None:
@@ -2803,7 +2811,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "A PersonUpdate for a new Person should have 1 or more new_record_ids",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_same_person_dupe(self) -> None:
@@ -2832,7 +2840,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             ),
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
         person_updates = [
@@ -2854,7 +2862,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             ),
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_other_person_dupe(self) -> None:
@@ -2886,7 +2894,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             ),
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
         #
@@ -2916,7 +2924,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             ),
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
         #
@@ -2948,7 +2956,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             ),
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
         #
@@ -2973,7 +2981,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             ),
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_person_dupe(self) -> None:
@@ -2999,14 +3007,14 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "The same Person UUID cannot exist in more than one PersonUpdate",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_potential_match_dne(self) -> None:
         with self.assertRaisesMessage(
             MatchGroup.DoesNotExist, "Potential match does not exist"
         ):
-            self.empi.match_person_records(12345, 1, [])
+            self.empi.match_person_records(12345, 1, [], self.user)
 
     def test_validation_potential_match_deleted(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -3017,7 +3025,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             MatchGroup.DoesNotExist, "Potential match has been replaced"
         ):
-            self.empi.match_person_records(match["id"], match["version"], [])
+            self.empi.match_person_records(match["id"], match["version"], [], self.user)
 
     def test_validation_potential_match_matched(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -3028,7 +3036,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             InvalidPotentialMatch, "Potential has already been matched"
         ):
-            self.empi.match_person_records(match["id"], match["version"], [])
+            self.empi.match_person_records(match["id"], match["version"], [], self.user)
 
     def test_validation_potential_match_version(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -3039,7 +3047,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         with self.assertRaisesMessage(
             InvalidPotentialMatch, "Potential match version is outdated"
         ):
-            self.empi.match_person_records(match["id"], match["version"], [])
+            self.empi.match_person_records(match["id"], match["version"], [], self.user)
 
     def test_validation_person_version_outdated(self) -> None:
         match = self.empi.get_potential_match(self.match_group1.id)
@@ -3063,7 +3071,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             InvalidPersonUpdate, "Invalid Person UUID or version outdated"
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_related_records(self) -> None:
@@ -3090,7 +3098,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "PersonRecord IDs specified in new_person_record_ids must be related to PotentialMatch",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_dne_records(self) -> None:
@@ -3107,7 +3115,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "PersonRecord IDs specified in new_person_record_ids must be related to PotentialMatch",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_related_persons(self) -> None:
@@ -3130,7 +3138,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "Specified Person UUID must be related to PotentialMatch",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
     def test_validation_corresponding_add_remove(self) -> None:
@@ -3153,7 +3161,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "PersonRecord IDs that are added to a Person, must be removed from another Person",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
         person_updates = [
@@ -3174,7 +3182,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "PersonRecord IDs that are removed from a Person, must be added to another Person",
         ):
             self.empi.match_person_records(
-                match["id"], match["version"], person_updates
+                match["id"], match["version"], person_updates, self.user
             )
 
 
