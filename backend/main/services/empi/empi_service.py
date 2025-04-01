@@ -1281,56 +1281,49 @@ class EMPIService:
             UploadError: If the upload fails.
         """
         # Get all person records
-        person_records = PersonRecord.objects.select_related("person").all()
-
-        # Create CSV content in memory
-        output = io.StringIO(newline="")
-        writer = csv.writer(output, lineterminator="\n")
-
-        # Write headers
-        writer.writerow(
-            [
-                "person_id",
-                "source_person_id",
-                "data_source",
-                "first_name",
-                "last_name",
-                "sex",
-                "race",
-                "birth_date",
-                "death_date",
-                "social_security_number",
-                "address",
-                "city",
-                "state",
-                "zip_code",
-                "county",
-                "phone",
-            ]
-        )
-
-        # Write data
-        for record in person_records:
-            writer.writerow(
-                [
-                    record.person.uuid,
-                    record.source_person_id,
-                    record.data_source,
-                    record.first_name,
-                    record.last_name,
-                    record.sex,
-                    record.race,
-                    record.birth_date,
-                    record.death_date,
-                    record.social_security_number,
-                    record.address,
-                    record.city,
-                    record.state,
-                    record.zip_code,
-                    record.county,
-                    record.phone,
-                ]
+        with connection.cursor() as cursor:
+            person_records_sql = sql.SQL("""
+                select
+                    p.uuid as person_id,
+                    pr.source_person_id,
+                    pr.data_source,
+                    pr.first_name,
+                    pr.last_name,
+                    pr.sex,
+                    pr.race,
+                    pr.birth_date,
+                    pr.death_date,
+                    pr.social_security_number,
+                    pr.address,
+                    pr.city,
+                    pr.state,
+                    pr.zip_code,
+                    pr.county,
+                    pr.phone
+                from {person_record_table} pr
+                inner join {person_table} p on pr.person_id = p.id
+            """).format(
+                person_record_table=sql.Identifier(PersonRecord._meta.db_table),
+                person_table=sql.Identifier(Person._meta.db_table),
             )
 
-        # Upload to S3
-        self.s3.put_object(s3_uri, output.getvalue().encode("utf-8"))
+            cursor.execute(person_records_sql)
+
+            self.logger.info(f"Retrieved {cursor.rowcount} person records")
+
+            # Create CSV content in memory
+            output = io.StringIO(newline="")
+            writer = csv.writer(output, lineterminator="\n")
+
+            # Write headers
+            column_names = [c.name for c in cursor.description]
+            writer.writerow(column_names)
+
+            # Write data
+            for row in cursor.fetchall():
+                writer.writerow(row)
+
+            # Upload to S3
+            self.s3.put_object(s3_uri, output.getvalue().encode("utf-8"))
+
+            self.logger.info(f"Uploaded {cursor.rowcount} person records to {s3_uri}")
