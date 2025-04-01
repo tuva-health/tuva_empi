@@ -4017,7 +4017,7 @@ class ExportPersonRecordsTestCase(TestCase):
 
         # Verify CSV headers
         expected_headers = [
-            "person_uuid",
+            "person_id",
             "source_person_id",
             "data_source",
             "first_name",
@@ -4098,7 +4098,7 @@ class ExportPersonRecordsTestCase(TestCase):
         # Verify only headers are present
         self.assertEqual(len(csv_content), 1)
         expected_headers = [
-            "person_uuid",
+            "person_id",
             "source_person_id",
             "data_source",
             "first_name",

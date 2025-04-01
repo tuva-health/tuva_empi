@@ -1290,7 +1290,7 @@ class EMPIService:
         # Write headers
         writer.writerow(
             [
-                "person_uuid",
+                "person_id",
                 "source_person_id",
                 "data_source",
                 "first_name",
