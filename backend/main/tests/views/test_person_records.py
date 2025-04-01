@@ -425,8 +425,6 @@ class ExportPersonRecordsTestCase(TestCase):
     @patch("main.views.person_records.EMPIService")
     def test_export_validation_ok(self, mock_empi: Any) -> None:
         """Tests export_person_records request validation succeeds."""
-        mock_empi_obj = mock_empi.return_value
-
         url = reverse("export_person_records")
 
         response = self.client.post(
@@ -440,8 +438,6 @@ class ExportPersonRecordsTestCase(TestCase):
     @patch("main.views.person_records.EMPIService")
     def test_export_validation_invalid_content_type(self, mock_empi: Any) -> None:
         """Tests export_person_records rejects content types other than application/json."""
-        mock_empi_obj = mock_empi.return_value
-
         url = reverse("export_person_records")
 
         response = self.client.post(
@@ -461,8 +457,6 @@ class ExportPersonRecordsTestCase(TestCase):
     @patch("main.views.person_records.EMPIService")
     def test_export_validation_invalid_request_method(self, mock_empi: Any) -> None:
         """Tests export_person_records rejects request methods besides POST."""
-        mock_empi_obj = mock_empi.return_value
-
         url = reverse("export_person_records")
 
         response = self.client.get(url)
@@ -501,8 +495,6 @@ class ExportPersonRecordsTestCase(TestCase):
     @patch("main.views.person_records.EMPIService")
     def test_export_validation_invalid_json(self, mock_empi: Any) -> None:
         """Tests export_person_records rejects request methods with invalid JSON."""
-        mock_empi_obj = mock_empi.return_value
-
         url = reverse("export_person_records")
 
         response = self.client.post(
@@ -524,8 +516,6 @@ class ExportPersonRecordsTestCase(TestCase):
     @patch("main.views.person_records.EMPIService")
     def test_export_validation_missing_fields(self, mock_empi: Any) -> None:
         """Tests export_person_records rejects request methods with missing fields."""
-        mock_empi_obj = mock_empi.return_value
-
         url = reverse("export_person_records")
 
         response = self.client.post(
@@ -549,8 +539,6 @@ class ExportPersonRecordsTestCase(TestCase):
     @patch("main.views.person_records.EMPIService")
     def test_export_invalid_s3_uri(self, mock_empi: Any) -> None:
         """Tests export_person_records s3_uri validation fails."""
-        mock_empi_obj = mock_empi.return_value
-
         url = reverse("export_person_records")
 
         # s3_uri missing object
