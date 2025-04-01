@@ -9,13 +9,15 @@ from main.models import User, UserRole
 
 
 class MatchesTestCase(TestCase):
+    user: User
+
     def setUp(self) -> None:
         self.maxDiff = None
 
-        user = User.objects.create(idp_user_id="1", role=UserRole.member.value)
+        self.user = User.objects.create(idp_user_id="1", role=UserRole.member.value)
         auth_patcher = patch(
             "main.views.auth.jwt.JwtAuthentication.authenticate",
-            return_value=(user, None),
+            return_value=(self.user, None),
         )
         auth_patcher.start()
         self.addCleanup(auth_patcher.stop)
@@ -62,6 +64,7 @@ class MatchesTestCase(TestCase):
                     "new_person_record_ids": [789, 101],
                 }
             ],
+            performed_by=self.user,
             comments=[
                 {
                     "person_record_id": 789,
@@ -105,6 +108,7 @@ class MatchesTestCase(TestCase):
                     "new_person_record_ids": [777],
                 }
             ],
+            performed_by=self.user,
             comments=[],
         )
 
