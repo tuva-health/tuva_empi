@@ -39,10 +39,10 @@ Alternatively, there is a more secure approach to storing these configuration fi
 
 1. cd `.devcontainer`
 1. Build and run the dev Docker containers: `docker compose up -d`
-1. Attach to the either the frontend or backend app container, for example: `docker attach tuva-empi-backend`
+1. Attach to the either the frontend or backend app container, for example: `docker attach tuva-empi-backend-1`
 1. `Ctrl-p` followed by `Ctrl-q` allows you to exit the container without stopping it
-1. To start the app container after stopping it: `docker start -i tuva-empi-app`
-1. To start and attach to the app container after restarting your system: `docker compose start` then `docker compose attach tuva-empi-backend`
+1. To start the app container after stopping it: `docker start -i tuva-empi-backend-1`
+1. To start and attach to the app container after restarting your system: `docker compose start` then `docker compose attach tuva-empi-backend-1`
 
 #### Next steps
 
