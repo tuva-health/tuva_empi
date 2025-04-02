@@ -27,30 +27,6 @@ class CognitoClient:
     def __init__(self) -> None:
         self.client = boto3.client("cognito-idp")
 
-    def list_users_by_attr(
-        self, user_pool_id: str, attr_name: CognitoAttributeName, attr_value: str
-    ) -> list[CognitoUserDict]:
-        try:
-            logger.info(
-                f"Fetching users from Cognito by {attr_name.value}: {attr_value}"
-            )
-
-            response = self.client.list_users(
-                UserPoolId=user_pool_id,
-                Filter=f'{attr_name.value} = "{attr_value}"',
-            )
-
-            return [
-                CognitoUserDict(
-                    Username=user["Username"], Attributes=user["Attributes"]
-                )
-                for user in response.get("Users", [])
-            ]
-
-        except ClientError as e:
-            logger.error(f"Failed to fetch users by {attr_name.value}: {e}")
-            raise
-
     def list_users(self, user_pool_id: str) -> list[CognitoUserDict]:
         try:
             logger.info("Fetching users from Cognito")

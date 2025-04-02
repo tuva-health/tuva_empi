@@ -1,8 +1,12 @@
+import logging
+
 from django.core.management.base import BaseCommand
 
 from main.config import get_config
 from main.models import User, UserRole
 from main.services.identity.identity_service import IdentityService
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -12,7 +16,7 @@ class Command(BaseCommand):
         """Setup an initial admin for Tuva EMPI."""
         # If there is already an admin, don't setup an initial admin
         if User.objects.filter(role=UserRole.admin.value).count() > 0:
-            print("Tuva EMPI already bootstrapped")
+            logger.info("Tuva EMPI already bootstrapped")
             return
 
         identity_service = IdentityService()
@@ -29,6 +33,6 @@ class Command(BaseCommand):
                 f"Found {len(users)} IDP users with email {admin_email} when only expecting one"
             )
 
-        IdentityService().update_user_role(users[0].id, UserRole.admin)
+        identity_service.update_user_role(users[0].id, UserRole.admin)
 
-        print(f"Added initial admin user with email {admin_email}")
+        logger.info(f"Added initial admin user with email {admin_email}")

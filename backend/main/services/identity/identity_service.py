@@ -1,14 +1,14 @@
 import logging
 from dataclasses import dataclass
-from typing import Optional, TypedDict
+from typing import Optional, TypedDict, cast
 
 from django.db import transaction
 from django.utils import timezone
 
-from main.config import IdpBackend, get_config
+from main.config import AwsCognitoConfigDict, IdpBackend, KeycloakConfigDict, get_config
 from main.models import User, UserRole
 from main.services.identity.cognito_provider import CognitoIdentityProvider
-from main.services.identity.identity_provider import IdpUser
+from main.services.identity.identity_provider import IdentityProvider, IdpUser
 from main.services.identity.keycloak_provider import KeycloakIdentityProvider
 
 
@@ -16,7 +16,7 @@ from main.services.identity.keycloak_provider import KeycloakIdentityProvider
 class UserWithMetadata:
     id: int
     email: str
-    role: UserRole
+    role: Optional[UserRole]
     idp_user_id: str
 
 
@@ -47,8 +47,7 @@ class IdentityService:
             if created:
                 self.logger.info(f"Added user {user.id}")
 
-    def get_users(self) -> list[UserWithMetadata]:
-        """Get Tuva EMPI users."""
+    def _get_identity_provider(self) -> IdentityProvider:
         config = get_config()
         backend = config["idp"]["backend"]
 
@@ -59,6 +58,26 @@ class IdentityService:
         else:
             raise Exception("IDP backend required")
 
+        return idp
+
+    def _get_identity_provider_config(
+        self,
+    ) -> AwsCognitoConfigDict | KeycloakConfigDict:
+        config = get_config()
+        backend = config["idp"]["backend"]
+
+        if backend == IdpBackend.aws_cognito.value:
+            idp_config = config["idp"]["aws_cognito"]
+        elif backend == IdpBackend.keycloak.value:
+            idp_config = config["idp"]["keycloak"]
+        else:
+            raise Exception("IDP backend required")
+
+        return idp_config
+
+    def get_users(self) -> list[UserWithMetadata]:
+        """Get Tuva EMPI users."""
+        idp = self._get_identity_provider()
         idp_users = idp.get_users()
         idp_users_by_id: dict[str, IdpUser] = {}
 
@@ -96,19 +115,11 @@ class IdentityService:
         return User.objects.get(idp_user_id=idp_user_id)
 
     def get_jwt_config(self) -> JwtConfigDict:
-        config = get_config()
-        backend = config["idp"]["backend"]
-
-        if backend == IdpBackend.aws_cognito.value:
-            idp_config = config["idp"]["aws_cognito"]
-        elif backend == IdpBackend.keycloak.value:
-            idp_config = config["idp"]["keycloak"]
-        else:
-            raise Exception("IDP backend required")
+        idp_config = self._get_identity_provider_config()
 
         return JwtConfigDict(
             jwt_header=idp_config["jwt_header"],
             jwks_url=idp_config["jwks_url"],
             client_id=idp_config["client_id"],
-            jwt_aud=idp_config.get("jwt_aud"),
+            jwt_aud=cast(Optional[str], idp_config.get("jwt_aud")),
         )
