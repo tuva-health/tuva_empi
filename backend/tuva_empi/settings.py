@@ -107,7 +107,7 @@ WSGI_APPLICATION = "tuva_empi.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "tuva_empi",
+        "NAME": config["db"]["name"],
         "USER": config["db"]["user"],
         "PASSWORD": config["db"]["password"],
         "HOST": config["db"]["host"],
