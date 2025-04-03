@@ -1706,25 +1706,25 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record1,
                 self.person1.id,
-                match_event.created,
+                self.person_record1.person_updated,
                 match_event.created,
             ),
             (
                 self.person_record2,
                 self.person2.id,
-                match_event.created,
+                self.person_record2.person_updated,
                 match_event.created,
             ),
             (
                 self.person_record3,
                 self.person3.id,
-                match_event.created,
+                self.person_record3.person_updated,
                 match_event.created,
             ),
             (
                 self.person_record4,
                 self.person4.id,
-                match_event.created,
+                self.person_record4.person_updated,
                 match_event.created,
             ),
             (
@@ -1884,25 +1884,25 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record1,
                 self.person1.id,
-                match_event.created,
+                self.person_record1.person_updated,
                 match_event.created,
             ),
             (
                 self.person_record2,
                 self.person2.id,
-                match_event.created,
+                self.person_record2.person_updated,
                 match_event.created,
             ),
             (
                 self.person_record3,
                 self.person3.id,
-                match_event.created,
+                self.person_record3.person_updated,
                 match_event.created,
             ),
             (
                 self.person_record4,
                 self.person4.id,
-                match_event.created,
+                self.person_record4.person_updated,
                 match_event.created,
             ),
             (
@@ -2082,7 +2082,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record1,
                 self.person1.id,
-                match_event.created,
+                self.person_record1.person_updated,
                 match_event.created,
             ),
             (
@@ -2100,7 +2100,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record4,
                 self.person4.id,
-                match_event.created,
+                self.person_record4.person_updated,
                 match_event.created,
             ),
             (
@@ -2305,7 +2305,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record1,
                 self.person1.id,
-                match_event.created,
+                self.person_record1.person_updated,
                 match_event.created,
             ),
             (
@@ -2558,7 +2558,12 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
                 match_event.created,
                 match_event.created,
             ),
-            (person_record7, self.person1.id, match_event.created, match_event.created),
+            (
+                person_record7,
+                self.person1.id,
+                person_record7.person_updated,
+                match_event.created,
+            ),
             (person_record8, self.person1.id, match_event.created, match_event.created),
             # person2
             (
@@ -2579,13 +2584,13 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record4,
                 self.person4.id,
-                match_event.created,
+                self.person_record4.person_updated,
                 match_event.created,
             ),
             (
                 person_record10,
                 self.person4.id,
-                match_event.created,
+                person_record10.person_updated,
                 match_event.created,
             ),
             # person 5
@@ -2841,7 +2846,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             (
                 self.person_record1,
                 self.person1.id,
-                match_event.created,
+                self.person_record1.person_updated,
                 match_event.created,
             ),
             (

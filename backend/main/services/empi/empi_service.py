@@ -794,8 +794,9 @@ class EMPIService:
         self,
         match_event: MatchEvent,
         add_action_partials: list[PersonRecordIdsPartialDict],
+        review_action_partials: Optional[list[PersonRecordIdsPartialDict]] = None,
     ) -> None:
-        self.logger.info(f"Updating {len(add_action_partials)} PersonRecords")
+        self.logger.info(f"Updating {len(add_action_partials)} PersonRecords as added")
 
         total_record_updated_count = 0
 
@@ -809,9 +810,27 @@ class EMPIService:
             )
             total_record_updated_count += record_updated_count
 
-        if total_record_updated_count != len(add_action_partials):
+        if review_action_partials:
+            self.logger.info(
+                f"Updating {len(review_action_partials)} PersonRecords as reviewed"
+            )
+            for action in review_action_partials:
+                record_updated_count = PersonRecord.objects.filter(
+                    id=action["person_record_id"]
+                ).update(
+                    matched_or_reviewed=match_event.created,
+                )
+                total_record_updated_count += record_updated_count
+        add_action_partials_count = len(add_action_partials)
+        review_action_partials_count = (
+            len(review_action_partials) if review_action_partials else 0
+        )
+        if (
+            total_record_updated_count
+            != add_action_partials_count + review_action_partials_count
+        ):
             raise Exception(
-                f"Failed to update PersonRecords. Only updated {total_record_updated_count} out of {len(add_action_partials)}"
+                f"Failed to update PersonRecords. Only updated {total_record_updated_count} out of {add_action_partials_count + review_action_partials_count}"
             )
 
         self.logger.info(f"Updated {total_record_updated_count} PersonRecords")
@@ -1061,10 +1080,9 @@ class EMPIService:
                 #
 
                 self._update_person_records(
-                    match_event, update_action_partials["add_record"]
-                )
-                self._update_person_records(
-                    match_event, update_action_partials["review_record"]
+                    match_event,
+                    update_action_partials["add_record"],
+                    update_action_partials["review_record"],
                 )
 
                 #
