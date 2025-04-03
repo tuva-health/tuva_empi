@@ -8,6 +8,7 @@ from typing import Literal, TypedDict, cast
 class DbConfigDict(TypedDict):
     user: str
     password: str
+    name: str
     host: str
     port: str
 
