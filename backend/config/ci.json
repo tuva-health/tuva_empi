@@ -3,6 +3,7 @@
     "db": {
         "user": "tuva_empi",
         "password": "tuva_empi",
+        "name": "tuva_empi",
         "host": "localhost",
         "port": "5432"
     },
