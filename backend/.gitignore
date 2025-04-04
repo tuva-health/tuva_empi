@@ -154,5 +154,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Config file used when deploying the application
-config/deployment.json
+# Config files used for local development
+config
+! config/local.json.example
+! config/ci.json
