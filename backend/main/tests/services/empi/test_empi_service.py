@@ -25,7 +25,7 @@ from main.models import (
     PersonRecordStaging,
     SplinkResult,
 )
-from main.s3 import S3Client
+from main.s3 import S3Client, UploadError
 from main.services.empi.empi_service import (
     DataSourceDict,
     EMPIService,
@@ -1480,6 +1480,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             first_name="John",
             last_name="Doe",
         )
+
         self.person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
@@ -1487,6 +1488,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             first_name="Jane",
             last_name="Smith",
         )
+
         self.person_record3 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
@@ -3911,3 +3913,221 @@ class PersonsTestCase(TransactionTestCase):
 
         with self.assertRaises(Person.DoesNotExist):
             self.empi.get_person(str(self.person1.uuid))
+
+
+class ExportPersonRecordsTestCase(TestCase):
+    empi: EMPIService
+    now: datetime
+    common_person_record: Mapping[str, Any]
+    config: Config
+    job: Job
+    person1: Person
+    person2: Person
+    person_record1: PersonRecord
+    person_record2: PersonRecord
+
+    def setUp(self) -> None:
+        """Set up test data."""
+        self.empi = EMPIService()
+        self.now = django_tz.now()
+
+        self.config = Config.objects.create(
+            splink_settings={},
+            potential_match_threshold=0.8,
+            auto_match_threshold=0.9,
+        )
+
+        self.job = Job.objects.create(
+            config=self.config,
+            status=JobStatus.succeeded,
+            s3_uri="s3://test/test",
+        )
+
+        self.common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "race": "W",
+        }
+
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job=self.job,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job=self.job,
+            version=1,
+            record_count=1,
+        )
+
+        self.person_record1 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person1.id,
+            data_source="test1",
+            source_person_id="1",
+            first_name="John",
+            last_name="Doe",
+            sex="M",
+            birth_date="1900-01-01",
+            death_date="3000-01-01",
+            social_security_number="123-45-6789",
+            address="123 Main St",
+            city="Anytown",
+            state="ST",
+            zip_code="12345",
+            county="County",
+            phone="555-555-5555",
+        )
+
+        self.person_record2 = PersonRecord.objects.create(
+            **self.common_person_record,
+            person_id=self.person2.id,
+            data_source="test2",
+            source_person_id="2",
+            first_name="Jane",
+            last_name="Smith",
+            sex="F",
+            birth_date="1900-01-02",
+            death_date="3000-01-02",
+            social_security_number="987-65-4321",
+            address="456 Oak St",
+            city="Somewhere",
+            state="ST",
+            zip_code="54321",
+            county="County",
+            phone="555-555-5556",
+        )
+
+    @patch("main.s3.S3Client.put_object")
+    def test_export(self, mock_put_object: Any) -> None:
+        """Tests successful export of person records."""
+        self.empi.export_person_records("s3://test/test")
+
+        # Verify S3 upload was called with CSV content
+        mock_put_object.assert_called_once()
+        call_args = mock_put_object.call_args[0]
+        self.assertEqual(call_args[0], "s3://test/test")
+
+        # Convert bytes to string and split into lines
+        csv_content = call_args[1].decode("utf-8").strip().split("\n")
+
+        # Verify CSV headers
+        expected_headers = [
+            "person_id",  # person_uuid -> person_id
+            "source_person_id",
+            "data_source",
+            "first_name",
+            "last_name",
+            "sex",
+            "race",
+            "birth_date",
+            "death_date",
+            "social_security_number",
+            "address",
+            "city",
+            "state",
+            "zip_code",
+            "county",
+            "phone",
+        ]
+        self.assertEqual(csv_content[0].split(","), expected_headers)
+
+        # Verify CSV data
+        data_rows = [row.split(",") for row in csv_content[1:]]
+        self.assertEqual(len(data_rows), 2)
+
+        # Sort rows by source_person_id for consistent comparison
+        data_rows.sort(key=lambda x: x[1])
+
+        # Verify first record
+        self.assertEqual(data_rows[0][0], str(self.person1.uuid))  # person_uuid
+        self.assertEqual(data_rows[0][1], "1")  # source_person_id
+        self.assertEqual(data_rows[0][2], "test1")  # data_source
+        self.assertEqual(data_rows[0][3], "John")  # first_name
+        self.assertEqual(data_rows[0][4], "Doe")  # last_name
+        self.assertEqual(data_rows[0][5], "M")  # sex
+        self.assertEqual(data_rows[0][6], "W")  # race
+        self.assertEqual(data_rows[0][7], "1900-01-01")  # birth_date
+        self.assertEqual(data_rows[0][8], "3000-01-01")  # death_date
+        self.assertEqual(data_rows[0][9], "123-45-6789")  # social_security_number
+        self.assertEqual(data_rows[0][10], "123 Main St")  # address
+        self.assertEqual(data_rows[0][11], "Anytown")  # city
+        self.assertEqual(data_rows[0][12], "ST")  # state
+        self.assertEqual(data_rows[0][13], "12345")  # zip_code
+        self.assertEqual(data_rows[0][14], "County")  # county
+        self.assertEqual(data_rows[0][15], "555-555-5555")  # phone
+
+        # Verify second record
+        self.assertEqual(data_rows[1][0], str(self.person2.uuid))  # person_uuid
+        self.assertEqual(data_rows[1][1], "2")  # source_person_id
+        self.assertEqual(data_rows[1][2], "test2")  # data_source
+        self.assertEqual(data_rows[1][3], "Jane")  # first_name
+        self.assertEqual(data_rows[1][4], "Smith")  # last_name
+        self.assertEqual(data_rows[1][5], "F")  # sex
+        self.assertEqual(data_rows[1][6], "W")  # race
+        self.assertEqual(data_rows[1][7], "1900-01-02")  # birth_date
+        self.assertEqual(data_rows[1][8], "3000-01-02")  # death_date
+        self.assertEqual(data_rows[1][9], "987-65-4321")  # social_security_number
+        self.assertEqual(data_rows[1][10], "456 Oak St")  # address
+        self.assertEqual(data_rows[1][11], "Somewhere")  # city
+        self.assertEqual(data_rows[1][12], "ST")  # state
+        self.assertEqual(data_rows[1][13], "54321")  # zip_code
+        self.assertEqual(data_rows[1][14], "County")  # county
+        self.assertEqual(data_rows[1][15], "555-555-5556")  # phone
+
+    @patch("main.s3.S3Client.put_object")
+    def test_export_empty(self, mock_put_object: Any) -> None:
+        """Tests export with no records."""
+        # Delete all person records
+        PersonRecord.objects.all().delete()
+
+        self.empi.export_person_records("s3://test/test")
+
+        # Verify S3 upload was called with CSV headers only
+        mock_put_object.assert_called_once()
+        call_args = mock_put_object.call_args[0]
+        self.assertEqual(call_args[0], "s3://test/test")
+
+        # Convert bytes to string and split into lines
+        csv_content = call_args[1].decode("utf-8").strip().split("\n")
+
+        # Verify only headers are present
+        self.assertEqual(len(csv_content), 1)
+        expected_headers = [
+            "person_id",  # person_uuid -> person_id
+            "source_person_id",
+            "data_source",
+            "first_name",
+            "last_name",
+            "sex",
+            "race",
+            "birth_date",
+            "death_date",
+            "social_security_number",
+            "address",
+            "city",
+            "state",
+            "zip_code",
+            "county",
+            "phone",
+        ]
+        self.assertEqual(csv_content[0].split(","), expected_headers)
+
+    @patch("main.s3.S3Client.put_object")
+    def test_export_s3_upload_error(self, mock_put_object: Any) -> None:
+        """Tests handling of S3 upload errors."""
+        mock_put_object.side_effect = UploadError("Upload failed")
+
+        with self.assertRaises(UploadError) as cm:
+            self.empi.export_person_records("s3://test/test")
+
+        self.assertEqual(str(cm.exception), "Upload failed")
