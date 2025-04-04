@@ -12,6 +12,7 @@ from rest_framework.request import Request
 from main.models import User
 from main.services.identity.identity_service import JwtConfigDict
 from main.views.auth.jwt import (
+    InvalidClientIdClaim,
     JwtAuthentication,
     decode_jwt,
     extract_token_from_request,
@@ -193,8 +194,9 @@ class JwtAuthenticationTests(TestCase):
 
     @patch("main.services.identity.identity_service.IdentityService.get_jwt_config")
     @patch("main.views.auth.jwt.decode_jwt")
+    @patch("main.views.auth.jwt.LOGGER")
     def test_authenticate_invalid_client_id(
-        self, mock_decode: Mock, mock_get_jwt_config: Mock
+        self, mock_logger: Mock, mock_decode: Mock, mock_get_jwt_config: Mock
     ) -> None:
         """Method authenticate raises PermissionDenied if token payload contains invalid client_id claim."""
         request = MagicMock(spec=Request)
@@ -206,13 +208,23 @@ class JwtAuthenticationTests(TestCase):
             "client_id": "invalid",
         }
 
-        with self.assertRaises(PermissionDenied):
+        with self.assertRaises(PermissionDenied) as ctx:
             JwtAuthentication().authenticate(request)
+
+        self.assertEqual(
+            str(ctx.exception.detail),
+            "You do not have permission to perform this action.",
+        )
+        mock_logger.exception.assert_called_with(
+            "Unexpected authentication error: Invalid client_id claim"
+        )
+        self.assertIsInstance(ctx.exception.__cause__, InvalidClientIdClaim)
 
     @patch("main.services.identity.identity_service.IdentityService.get_jwt_config")
     @patch("main.views.auth.jwt.decode_jwt")
+    @patch("main.views.auth.jwt.LOGGER")
     def test_authenticate_user_does_not_exist(
-        self, mock_decode: Mock, mock_get_jwt_config: Mock
+        self, mock_logger: Mock, mock_decode: Mock, mock_get_jwt_config: Mock
     ) -> None:
         """Method authenticate raises PermissionDenied if user does not exist."""
         request = MagicMock(spec=Request)
@@ -224,8 +236,15 @@ class JwtAuthenticationTests(TestCase):
             "client_id": self.jwt_config["client_id"],
         }
 
-        with self.assertRaises(PermissionDenied):
+        with self.assertRaises(PermissionDenied) as ctx:
             JwtAuthentication().authenticate(request)
+
+        self.assertEqual(
+            str(ctx.exception.detail),
+            "You do not have permission to perform this action.",
+        )
+        mock_logger.exception.assert_called_with("User does not exist")
+        self.assertIsInstance(ctx.exception.__cause__, User.DoesNotExist)
 
     def test_authenticate_header(self) -> None:
         """Should return Bearer."""

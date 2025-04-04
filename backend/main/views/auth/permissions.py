@@ -6,9 +6,9 @@ from rest_framework.request import Request
 
 from main.models import User, UserRole
 
-# There is a circular dependency issue with DRF because we use IsMember
-# as a default permission class. Below we type `view` using "APIView".
-# There might be a more modern best-practice for situations like this.
+# There is a circular dependency issue with DRF because we use a default permission class
+# in settings.py. DRF imports this module which also imports DRF. There might be a more
+# modern best-practice for situations like this.
 if TYPE_CHECKING:
     from rest_framework.views import APIView
 

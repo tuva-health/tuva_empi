@@ -39,9 +39,7 @@ DEBUG = config["django"].get("debug", False)
 
 print("Debug mode enabled: ", DEBUG)
 
-ALLOWED_HOSTS: list[str] = config["django"].get(
-    "allowed_hosts", [".localhost", "127.0.0.1", "[::1]", "oauth2-proxy"]
-)
+ALLOWED_HOSTS: list[str] = config["django"]["allowed_hosts"]
 
 # Application definition
 
@@ -218,7 +216,7 @@ LOGGING = {
 }
 
 CORS_ALLOWED_ORIGINS = config["django"].get("cors_allowed_origins", [])
-CORS_ALLOW_ALL_ORIGINS = True if config.get("env") in {"local", "ci"} else False
+CORS_ALLOW_ALL_ORIGINS = True if config.get("env") == "local" else False
 
 if CORS_ALLOW_ALL_ORIGINS:
     print("**WARNING** CORS_ALLOW_ALL_ORIGINS set to True")

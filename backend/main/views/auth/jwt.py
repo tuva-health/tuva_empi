@@ -14,6 +14,10 @@ from main.services.identity.identity_service import IdentityService
 LOGGER = logging.getLogger(__name__)
 
 
+class InvalidClientIdClaim(Exception):
+    """Invalid client_id claim in JWT payload."""
+
+
 def extract_token_from_request(request: Request, jwt_header_name: str) -> Optional[str]:
     """Extracts JWT from the Authorization header."""
     LOGGER.info(f"Extracting JWT from request header {jwt_header_name}")
@@ -108,7 +112,7 @@ class JwtAuthentication(authentication.BaseAuthentication):
             payload_client_id = payload.get("client_id")
 
             if payload_client_id and payload_client_id != jwt_config["client_id"]:
-                raise ValueError("Unexpected client_id claim")
+                raise InvalidClientIdClaim("Invalid client_id claim")
 
             LOGGER.info("Found JWT payload, retrieving user by sub")
 
@@ -116,12 +120,16 @@ class JwtAuthentication(authentication.BaseAuthentication):
             user = IdentityService().get_internal_user_by_idp_user_id(payload["sub"])
 
             return (user, None)
-        except User.DoesNotExist:
+        except User.DoesNotExist as err:
             LOGGER.exception("User does not exist")
-            raise PermissionDenied("You do not have permission to perform this action.")
+            raise PermissionDenied(
+                "You do not have permission to perform this action."
+            ) from err
         except Exception as err:
             LOGGER.exception(f"Unexpected authentication error: {err}")
-            raise PermissionDenied("You do not have permission to perform this action.")
+            raise PermissionDenied(
+                "You do not have permission to perform this action."
+            ) from err
 
     def authenticate_header(self, request: Request) -> str:
         return "Bearer"
