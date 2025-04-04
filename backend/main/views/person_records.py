@@ -80,7 +80,6 @@ class ExportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
 
 
 @api_view(["POST"])
-@parser_classes([JSONParser])
 def export_person_records(request: Request) -> Response:
     """Export person records to S3 in CSV format."""
     serializer = ExportPersonRecordsRequest(data=request.data)
