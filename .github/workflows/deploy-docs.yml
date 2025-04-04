@@ -1,6 +1,10 @@
 name: Build and Deploy Docs
 
 on:
+  # For testing only
+  pull_request:
+    paths:
+      - docs/**
   push:
     branches:
       - main
