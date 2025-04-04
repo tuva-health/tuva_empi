@@ -32,7 +32,7 @@ from main.models import (
     PersonRecordStaging,
     SplinkResult,
 )
-from main.s3 import S3Client
+from main.util.s3 import S3Client
 from main.util.sql import create_temp_table_like, drop_column
 
 

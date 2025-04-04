@@ -25,7 +25,6 @@ from main.models import (
     PersonRecordStaging,
     SplinkResult,
 )
-from main.s3 import S3Client, UploadError
 from main.services.empi.empi_service import (
     DataSourceDict,
     EMPIService,
@@ -41,6 +40,7 @@ from main.services.empi.empi_service import (
     PredictionResultDict,
 )
 from main.util.dict import select_keys
+from main.util.s3 import S3Client, UploadError
 
 
 class MockFSS3Client:
@@ -4007,7 +4007,7 @@ class ExportPersonRecordsTestCase(TestCase):
             phone="555-555-5556",
         )
 
-    @patch("main.s3.S3Client.put_object")
+    @patch("main.util.s3.S3Client.put_object")
     def test_export(self, mock_put_object: Any) -> None:
         """Tests successful export of person records."""
         self.empi.export_person_records("s3://test/test")
@@ -4084,7 +4084,7 @@ class ExportPersonRecordsTestCase(TestCase):
         self.assertEqual(data_rows[1][14], "County")  # county
         self.assertEqual(data_rows[1][15], "555-555-5556")  # phone
 
-    @patch("main.s3.S3Client.put_object")
+    @patch("main.util.s3.S3Client.put_object")
     def test_export_empty(self, mock_put_object: Any) -> None:
         """Tests export with no records."""
         # Delete all person records
@@ -4122,7 +4122,7 @@ class ExportPersonRecordsTestCase(TestCase):
         ]
         self.assertEqual(csv_content[0].split(","), expected_headers)
 
-    @patch("main.s3.S3Client.put_object")
+    @patch("main.util.s3.S3Client.put_object")
     def test_export_s3_upload_error(self, mock_put_object: Any) -> None:
         """Tests handling of S3 upload errors."""
         mock_put_object.side_effect = UploadError("Upload failed")
