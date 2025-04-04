@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from main.s3 import ObjectDoesNotExist
+from main.s3 import ObjectDoesNotExist, UploadError
 from main.services.empi.empi_service import InvalidPersonRecordFileFormat
 
 
@@ -416,6 +416,211 @@ class PersonRecordsTestCase(TestCase):
                 "error": {
                     "message": "Validation failed",
                     "details": [{"message": "S3 object does not exist"}],
+                }
+            },
+        )
+
+
+class ExportPersonRecordsTestCase(TestCase):
+    @patch("main.views.person_records.EMPIService")
+    def test_export_validation_ok(self, mock_empi: Any) -> None:
+        """Tests export_person_records request validation succeeds."""
+        url = reverse("export_person_records")
+
+        response = self.client.post(
+            url,
+            {"s3_uri": "s3://tuva-health-example/test"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertDictEqual(response.json(), {})
+
+    @patch("main.views.person_records.EMPIService")
+    def test_export_validation_invalid_content_type(self, mock_empi: Any) -> None:
+        """Tests export_person_records rejects content types other than application/json."""
+        url = reverse("export_person_records")
+
+        response = self.client.post(
+            url,
+            {"s3_uri": "s3://tuva-health-example/test"},
+        )
+        self.assertEqual(response.status_code, 415)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": 'Unsupported media type "multipart/form-data; boundary=BoUnDaRyStRiNg" in request.',
+                }
+            },
+        )
+
+    @patch("main.views.person_records.EMPIService")
+    def test_export_validation_invalid_request_method(self, mock_empi: Any) -> None:
+        """Tests export_person_records rejects request methods besides POST."""
+        url = reverse("export_person_records")
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 405)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": 'Method "GET" not allowed.',
+                }
+            },
+        )
+
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, 405)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": 'Method "DELETE" not allowed.',
+                }
+            },
+        )
+
+        response = self.client.patch(url)
+        self.assertEqual(response.status_code, 405)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": 'Method "PATCH" not allowed.',
+                }
+            },
+        )
+
+    @patch("main.views.person_records.EMPIService")
+    def test_export_validation_invalid_json(self, mock_empi: Any) -> None:
+        """Tests export_person_records rejects request methods with invalid JSON."""
+        url = reverse("export_person_records")
+
+        response = self.client.post(
+            url,
+            "{",
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": "JSON parse error - Expecting property name enclosed in "
+                    "double quotes: line 1 column 2 (char 1)"
+                }
+            },
+        )
+
+    @patch("main.views.person_records.EMPIService")
+    def test_export_validation_missing_fields(self, mock_empi: Any) -> None:
+        """Tests export_person_records rejects request methods with missing fields."""
+        url = reverse("export_person_records")
+
+        response = self.client.post(
+            url,
+            "",
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "details": [
+                        {"field": "s3_uri", "message": "This field is required."},
+                    ],
+                    "message": "Validation failed",
+                }
+            },
+        )
+
+    @patch("main.views.person_records.EMPIService")
+    def test_export_invalid_s3_uri(self, mock_empi: Any) -> None:
+        """Tests export_person_records s3_uri validation fails."""
+        url = reverse("export_person_records")
+
+        # s3_uri missing object
+        response = self.client.post(
+            url,
+            {"s3_uri": "s3://tuva-health-example/"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": "Validation failed",
+                    "details": [{"field": "s3_uri", "message": "Invalid S3 URI"}],
+                }
+            },
+        )
+
+        # s3_uri bucket name has invalid character
+        response = self.client.post(
+            url,
+            {"s3_uri": "s3://tuva-health?example/test"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": "Validation failed",
+                    "details": [{"field": "s3_uri", "message": "Invalid S3 URI"}],
+                }
+            },
+        )
+
+    @override_settings(DEBUG=False)
+    @patch("main.views.person_records.EMPIService")
+    def test_export_unexpected_internal_error(self, mock_empi: Any) -> None:
+        """Tests export_person_records handles internal errors."""
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.export_person_records.side_effect = ValueError("Unexpected error")
+
+        url = reverse("export_person_records")
+
+        self.client.raise_request_exception = False
+        response = self.client.post(
+            url,
+            {"s3_uri": "s3://tuva-health-example/test"},
+            content_type="application/json",
+        )
+        self.client.raise_request_exception = True
+
+        self.assertEqual(response.status_code, 500)
+        self.assertTrue(
+            response.json()["error"]["message"].startswith(
+                "Unexpected internal error - id="
+            )
+        )
+
+    @patch("main.views.person_records.EMPIService")
+    def test_export_s3_upload_error(self, mock_empi: Any) -> None:
+        """Tests export_person_records handles S3 upload errors."""
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.export_person_records.side_effect = UploadError(
+            "Failed to upload to S3"
+        )
+
+        url = reverse("export_person_records")
+
+        response = self.client.post(
+            url,
+            {"s3_uri": "s3://tuva-health-example/test"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "message": "Validation failed",
+                    "details": [{"message": "Failed to upload to S3"}],
                 }
             },
         )

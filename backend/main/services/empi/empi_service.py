@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import logging
 import uuid
@@ -794,8 +796,9 @@ class EMPIService:
         self,
         match_event: MatchEvent,
         add_action_partials: list[PersonRecordIdsPartialDict],
+        review_action_partials: Optional[list[PersonRecordIdsPartialDict]] = None,
     ) -> None:
-        self.logger.info(f"Updating {len(add_action_partials)} PersonRecords")
+        self.logger.info(f"Updating {len(add_action_partials)} PersonRecords as added")
 
         total_record_updated_count = 0
 
@@ -809,9 +812,28 @@ class EMPIService:
             )
             total_record_updated_count += record_updated_count
 
-        if total_record_updated_count != len(add_action_partials):
+        if review_action_partials:
+            self.logger.info(
+                f"Updating {len(review_action_partials)} PersonRecords as reviewed"
+            )
+            for action in review_action_partials:
+                record_updated_count = PersonRecord.objects.filter(
+                    id=action["person_record_id"]
+                ).update(
+                    matched_or_reviewed=match_event.created,
+                )
+                total_record_updated_count += record_updated_count
+
+        add_action_partials_count = len(add_action_partials)
+        review_action_partials_count = (
+            len(review_action_partials) if review_action_partials else 0
+        )
+        if (
+            total_record_updated_count
+            != add_action_partials_count + review_action_partials_count
+        ):
             raise Exception(
-                f"Failed to update PersonRecords. Only updated {total_record_updated_count} out of {len(add_action_partials)}"
+                f"Failed to update PersonRecords. Only updated {total_record_updated_count} out of {add_action_partials_count + review_action_partials_count}"
             )
 
         self.logger.info(f"Updated {total_record_updated_count} PersonRecords")
@@ -1061,7 +1083,9 @@ class EMPIService:
                 #
 
                 self._update_person_records(
-                    match_event, update_action_partials["add_record"]
+                    match_event,
+                    update_action_partials["add_record"],
+                    update_action_partials["review_record"],
                 )
 
                 #
@@ -1265,3 +1289,60 @@ class EMPIService:
                 ]
 
             return persons[0]
+
+    def export_person_records(self, s3_uri: str) -> None:
+        """Export person records to S3 in CSV format.
+
+        Args:
+            s3_uri: The S3 URI to export to.
+
+        Raises:
+            UploadError: If the upload fails.
+        """
+        # Get all person records
+        with connection.cursor() as cursor:
+            person_records_sql = sql.SQL("""
+                select
+                    p.uuid as person_id,
+                    pr.source_person_id,
+                    pr.data_source,
+                    pr.first_name,
+                    pr.last_name,
+                    pr.sex,
+                    pr.race,
+                    pr.birth_date,
+                    pr.death_date,
+                    pr.social_security_number,
+                    pr.address,
+                    pr.city,
+                    pr.state,
+                    pr.zip_code,
+                    pr.county,
+                    pr.phone
+                from {person_record_table} pr
+                inner join {person_table} p on pr.person_id = p.id
+            """).format(
+                person_record_table=sql.Identifier(PersonRecord._meta.db_table),
+                person_table=sql.Identifier(Person._meta.db_table),
+            )
+
+            cursor.execute(person_records_sql)
+
+            self.logger.info(f"Retrieved {cursor.rowcount} person records")
+
+            # Create CSV content in memory
+            output = io.StringIO(newline="")
+            writer = csv.writer(output, lineterminator="\n")
+
+            # Write headers
+            column_names = [c.name for c in cursor.description]
+            writer.writerow(column_names)
+
+            # Write data
+            for row in cursor.fetchall():
+                writer.writerow(row)
+
+            # Upload to S3
+            self.s3.put_object(s3_uri, output.getvalue().encode("utf-8"))
+
+            self.logger.info(f"Uploaded {cursor.rowcount} person records to {s3_uri}")
