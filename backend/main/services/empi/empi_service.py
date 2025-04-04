@@ -823,6 +823,7 @@ class EMPIService:
                     matched_or_reviewed=match_event.created,
                 )
                 total_record_updated_count += record_updated_count
+
         add_action_partials_count = len(add_action_partials)
         review_action_partials_count = (
             len(review_action_partials) if review_action_partials else 0
