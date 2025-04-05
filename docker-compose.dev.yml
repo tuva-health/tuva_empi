@@ -1,0 +1,73 @@
+name: tuva-empi
+
+services:
+
+  backend: !reset null
+
+  backend-dev:
+    build:
+      context: ./infra/dev/backend
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    stdin_open: true
+    tty: true
+    environment:
+      PYTHONUNBUFFERED: 1
+      # Tuva EMPI configuration file
+      CONFIG_FILE: config/local.json
+      # AWS config for the CLI and Boto3
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    working_dir: /app
+    volumes:
+      - .:/app:cached
+      # Persisting the pip cache saves time on pip install
+      - backend-pip-cache:/root/.cache/pip
+      # If you'd like to mount an AWS config in order to access AWS
+      # APIs, you can. We don't mount it by default.
+      - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
+      # Backend config file
+      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/app/backend/config/local.json
+    networks:
+      - app-network
+    expose:
+      - "8000"
+    ports:
+      - 127.0.0.1:8000:8000
+
+  frontend: !reset null
+
+  frontend-dev:
+    build:
+      context: ./infra/dev/frontend
+      dockerfile: Dockerfile
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      - .:/app:cached
+    networks:
+      - app-network
+    expose:
+      - "3000"
+    ports:
+      - 127.0.0.1:3000:3000
+
+  nginx:
+    # https://hub.docker.com/layers/library/nginx/1.27.4-alpine/images/sha256-a71e0884a7f1192ecf5decf062b67d46b54ad63f0cc1b8aa7e705f739a97c2fc
+    image: nginx:1.27.4-alpine@sha256:4ff102c5d78d254a6f0da062b3cf39eaf07f01eec0927fd21e219d0af8bc0591
+    depends_on: !override
+      - backend-dev
+      - frontend-dev
+    volumes:
+      - ./infra/dev/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - app-network
+    expose:
+      - "80"
+
+volumes:
+  backend-pip-cache:

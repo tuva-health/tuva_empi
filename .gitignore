@@ -16,4 +16,5 @@
 .github/copilot-instructions.md
 
 # Local environment variables
-.env
+.env*
+!.env.example
