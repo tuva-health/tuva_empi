@@ -4,11 +4,21 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from main.models import User, UserRole
 from main.services.empi.empi_service import InvalidPersonRecordFileFormat
 from main.util.s3 import ObjectDoesNotExist, UploadError
 
 
 class PersonRecordsTestCase(TestCase):
+    def setUp(self) -> None:
+        user = User.objects.create(idp_user_id="1", role=UserRole.member.value)
+        auth_patcher = patch(
+            "main.views.auth.jwt.JwtAuthentication.authenticate",
+            return_value=(user, None),
+        )
+        auth_patcher.start()
+        self.addCleanup(auth_patcher.stop)
+
     @patch("main.views.person_records.EMPIService")
     def test_import_validation_ok(self, mock_empi: Any) -> None:
         """Tests import_person_records request validation succeeds."""
@@ -422,6 +432,15 @@ class PersonRecordsTestCase(TestCase):
 
 
 class ExportPersonRecordsTestCase(TestCase):
+    def setUp(self) -> None:
+        user = User.objects.create(idp_user_id="1", role=UserRole.member.value)
+        auth_patcher = patch(
+            "main.views.auth.jwt.JwtAuthentication.authenticate",
+            return_value=(user, None),
+        )
+        auth_patcher.start()
+        self.addCleanup(auth_patcher.stop)
+
     @patch("main.views.person_records.EMPIService")
     def test_export_validation_ok(self, mock_empi: Any) -> None:
         """Tests export_person_records request validation succeeds."""

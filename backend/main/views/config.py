@@ -1,13 +1,12 @@
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, parser_classes
-from rest_framework.parsers import JSONParser
+from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from main.services.empi.empi_service import EMPIService
 from main.util.object_id import get_object_id
-from main.validators.splink_settings import SplinkSettingsSerializer
 from main.views.serializer import Serializer
+from main.views.validators.splink_settings import SplinkSettingsSerializer
 
 
 class CreateConfigRequest(Serializer):
@@ -17,7 +16,6 @@ class CreateConfigRequest(Serializer):
 
 
 @api_view(["POST"])
-@parser_classes([JSONParser])
 def create_config(request: Request) -> Response:
     """Create Config object."""
     serializer = CreateConfigRequest(data=request.data)
