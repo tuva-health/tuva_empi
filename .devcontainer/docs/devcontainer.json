@@ -1,0 +1,19 @@
+{
+    "name": "Tuva EMPI docs dev container",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "."
+    },
+    "shutdownAction": "none",
+    "workspaceMount": "source=${localWorkspaceFolder}/docs,target=/app/docs,type=bind",
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "files.insertFinalNewline": true,
+                "files.trimTrailingWhitespace": true
+            },
+            "extensions": []
+        }
+    }
+}
