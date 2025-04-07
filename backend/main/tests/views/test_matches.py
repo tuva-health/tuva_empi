@@ -5,10 +5,20 @@ from unittest.mock import patch
 from django.test import TestCase
 from django.urls import reverse
 
+from main.models import User, UserRole
+
 
 class MatchesTestCase(TestCase):
     def setUp(self) -> None:
         self.maxDiff = None
+
+        user = User.objects.create(idp_user_id="1", role=UserRole.member.value)
+        auth_patcher = patch(
+            "main.views.auth.jwt.JwtAuthentication.authenticate",
+            return_value=(user, None),
+        )
+        auth_patcher.start()
+        self.addCleanup(auth_patcher.stop)
 
     #
     # create_match

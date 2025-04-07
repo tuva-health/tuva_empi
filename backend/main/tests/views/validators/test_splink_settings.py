@@ -3,7 +3,7 @@ from unittest import TestCase
 
 from rest_framework.exceptions import ValidationError
 
-from main.validators.splink_settings import (
+from main.views.validators.splink_settings import (
     ComparisonLevelSerializer,
     ComparisonSerializer,
     SplinkSettingsSerializer,

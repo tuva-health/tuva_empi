@@ -1,7 +1,7 @@
 {
     "name": "Tuva EMPI backend dev container",
     "dockerComposeFile": ["../docker-compose.yml"],
-    "service": "tuva-empi-backend",
+    "service": "backend",
     "shutdownAction": "none",
     "workspaceFolder": "/app",
     "mounts": [
