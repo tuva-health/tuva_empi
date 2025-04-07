@@ -1,0 +1,33 @@
+{
+    "env": "local",
+    "db": {
+        "user": "tuva_empi",
+        "password": "tuva_empi",
+        "host": "db",
+        "port": "5432"
+    },
+    "django": {
+        "debug": false,
+        "secret_key": "django-insecure-$@j@kbe1r&e!g*%kz(#mwje1z+6$fs24m6h4rukhkmsi))l8vg",
+        "allowed_hosts": [".localhost", "127.0.0.1", "[::1]", "oauth2-proxy"]
+    },
+    "idp": {
+        "backend": "keycloak",
+        "aws_cognito": {
+            "cognito_user_pool_id": "",
+            "jwt_header": "X-Forwarded-Access-Token",
+            "jwks_url": "",
+            "client_id": ""
+        },
+        "keycloak": {
+            "server_url": "http://keycloak:8080",
+            "realm": "test-realm",
+            "jwt_header": "X-Forwarded-Access-Token",
+            "jwt_aud": "account",
+            "jwks_url": "http://keycloak:8080/realms/test-realm/protocol/openid-connect/certs",
+            "client_id": "test-client",
+            "client_secret": "insecure-1234"
+        }
+    },
+    "initial_setup": {"admin_email": "user@example.com"}
+}

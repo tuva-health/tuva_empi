@@ -2,17 +2,16 @@ import re
 from urllib.parse import urlparse
 
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, parser_classes
-from rest_framework.parsers import JSONParser
+from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from main.s3 import ObjectDoesNotExist, UploadError
 from main.services.empi.empi_service import (
     EMPIService,
     InvalidPersonRecordFileFormat,
 )
 from main.util.object_id import get_id, get_object_id, get_prefix, is_object_id
+from main.util.s3 import ObjectDoesNotExist, UploadError
 from main.views.errors import validation_error_data
 from main.views.serializer import Serializer
 
@@ -50,7 +49,6 @@ class ImportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
 
 
 @api_view(["POST"])
-@parser_classes([JSONParser])
 def import_person_records(request: Request) -> Response:
     """Import person records from an S3 object."""
     serializer = ImportPersonRecordsRequest(data=request.data)
@@ -82,7 +80,6 @@ class ExportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
 
 
 @api_view(["POST"])
-@parser_classes([JSONParser])
 def export_person_records(request: Request) -> Response:
     """Export person records to S3 in CSV format."""
     serializer = ExportPersonRecordsRequest(data=request.data)
