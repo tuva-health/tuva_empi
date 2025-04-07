@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from main.models import MatchGroup
+from main.models import MatchGroup, User
 from main.services.empi.empi_service import (
     EMPIService,
     InvalidPersonUpdate,
@@ -56,6 +56,9 @@ def create_match(request: Request) -> Response:
         data = serializer.validated_data
         empi = EMPIService()
 
+        # We only expect User objects in request.user for protected endpoints
+        assert isinstance(request.user, User)
+
         try:
             empi.match_person_records(
                 potential_match_id=get_id(data["potential_match_id"]),
@@ -63,6 +66,7 @@ def create_match(request: Request) -> Response:
                 person_updates=[
                     get_person_update(update) for update in data["person_updates"]
                 ],
+                performed_by=request.user,
                 comments=[
                     {
                         "person_record_id": get_id(comment["person_record_id"]),

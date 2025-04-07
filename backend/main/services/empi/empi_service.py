@@ -31,6 +31,7 @@ from main.models import (
     PersonRecord,
     PersonRecordStaging,
     SplinkResult,
+    User,
 )
 from main.util.s3 import S3Client
 from main.util.sql import create_temp_table_like, drop_column
@@ -844,6 +845,7 @@ class EMPIService:
         match_group: MatchGroup,
         action_partials: list[PersonRecordIdsPartialDict],
         action_type: PersonActionType,
+        performed_by: User,
     ) -> None:
         actions = [
             PersonAction(
@@ -852,6 +854,7 @@ class EMPIService:
                 person_id=action["person_id"],
                 person_record_id=action["person_record_id"],
                 type=action_type,
+                performed_by_id=performed_by.id,
             )
             for action in action_partials
         ]
@@ -1007,6 +1010,7 @@ class EMPIService:
         potential_match_id: int,
         potential_match_version: int,
         person_updates: list[PersonUpdateDict],
+        performed_by: User,
         comments: list[PersonRecordCommentDict] = [],
     ) -> MatchEvent:
         """Match PersonRecords (move PersonRecords between Persons).
@@ -1092,7 +1096,6 @@ class EMPIService:
                 # Load generated PersonActions
                 #
 
-                # FIXME: Integrate with identity provider and add performed_by field
                 # FIXME: Add assertions so that if we add a record, we remove it from somewhere else and vice-versa
                 # We can do assertion on final update_action_partials - group by record_id
 
@@ -1101,18 +1104,21 @@ class EMPIService:
                     match_group,
                     update_action_partials["review_record"],
                     PersonActionType.review,
+                    performed_by,
                 )
                 self._bulk_create_person_actions(
                     match_event,
                     match_group,
                     update_action_partials["remove_record"],
                     PersonActionType.remove_record,
+                    performed_by,
                 )
                 self._bulk_create_person_actions(
                     match_event,
                     match_group,
                     update_action_partials["add_record"],
                     PersonActionType.add_record,
+                    performed_by,
                 )
 
                 #
@@ -1123,6 +1129,7 @@ class EMPIService:
                     match_event_id=match_event.id,
                     match_group_id=match_group.id,
                     type=MatchGroupActionType.match,
+                    performed_by_id=performed_by.id,
                 )
 
                 #
