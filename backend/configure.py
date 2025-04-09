@@ -8,7 +8,9 @@ def get_config() -> None:
     config_path = os.environ["DEST_CONFIG_FILE"]
 
     if os.path.exists(config_path):
-        print(f"Config already exists at {config_path}, not pulling from AWS Secrets Manager")
+        print(
+            f"Config already exists at {config_path}, not pulling from AWS Secrets Manager"
+        )
         return
 
     print("Attempting to pull config from AWS Secrets Manager")
