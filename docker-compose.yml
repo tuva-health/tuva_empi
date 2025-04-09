@@ -6,8 +6,6 @@ services:
     image: localstack/localstack:s3-latest@sha256:b5758a58e8500838464a0ee971229379ac933482b57f9abb2f68ff22d55c3320
     ports:
       - 127.0.0.1:4566:4566
-    volumes:
-      - localstack-data:/var/lib/localstack:cached
     networks:
       - app-network
 
@@ -15,9 +13,9 @@ services:
     # https://hub.docker.com/layers/library/postgres/16/images/sha256-295787823185868c4679563715b0a7a07309387f3836117f1b0984d1bfc2bd24
     image: postgres:16@sha256:e38a7fe2234174d0eb69b5467d346e1bb193c09f98adc229fc9df30fe364dd4a
     environment:
-      - POSTGRES_DB=tuva_empi
-      - POSTGRES_USER=tuva_empi
-      - POSTGRES_PASSWORD=tuva_empi
+      POSTGRES_DB: tuva_empi
+      POSTGRES_USER: tuva_empi
+      POSTGRES_PASSWORD: tuva_empi
     volumes:
       - db-data:/var/lib/postgresql/data:cached
     networks:
@@ -27,64 +25,66 @@ services:
 
   backend:
     build:
-      context: backend
+      context: ./backend
       dockerfile: Dockerfile
     depends_on:
-      - db
-    stdin_open: true
-    tty: true
+      db:
+        condition: service_started
+      keycloak-init:
+        condition: service_completed_successfully
     environment:
       PYTHONUNBUFFERED: 1
-      # Tuva EMPI configuration file
-      CONFIG_FILE: config/local.json
-      # AWS config for the sCLI and Boto3
+      # AWS config for the CLI and Boto3
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
-    working_dir: /app
     volumes:
-      - ..:/app:cached
-      # Persisting the pip cache saves time on pip install
-      - backend-pip-cache:/root/.cache/pip
       # If you'd like to mount an AWS config in order to access AWS
       # APIs, you can. We don't mount it by default.
-      - ${AWS_CONFIG_FILE:-./backend/empty-aws-config}:/root/.aws/config
-      # Mount potentially symlinked config file in order to access it
-      # from within the dev container. Mounting this will follow the symlink
-      # and mount the original file and the symlink in the container.
-      # See README.md
-      - ../backend/config/local.json:/app/backend/config/local.json
+      - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
+      # Backend config file
+      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/app/config/deployment.json
     networks:
       - app-network
     expose:
       - "8000"
     ports:
       - 127.0.0.1:8000:8000
+    healthcheck:
+      test: "curl -fs http://localhost:8000/api/v1/health-check || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   frontend:
     build:
-      context: frontend
+      context: ./frontend
       dockerfile: Dockerfile
-    stdin_open: true
-    tty: true
-    working_dir: /app
-    volumes:
-      - ..:/app:cached
     networks:
       - app-network
     expose:
       - "3000"
     ports:
       - 127.0.0.1:3000:3000
+    healthcheck:
+      test: "curl -fs http://localhost:3000 || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   nginx:
-    image: nginx:alpine
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    # https://hub.docker.com/layers/library/nginx/1.27.4-alpine/images/sha256-a71e0884a7f1192ecf5decf062b67d46b54ad63f0cc1b8aa7e705f739a97c2fc
+    image: nginx:1.27.4-alpine@sha256:4ff102c5d78d254a6f0da062b3cf39eaf07f01eec0927fd21e219d0af8bc0591
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./infra/demo/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - app-network
     expose:
@@ -101,11 +101,11 @@ services:
       - app-network
     ports:
       - 127.0.0.1:8080:8080
-    command: ["start-dev", "--hostname=http://localhost:8080", "--hostname-strict=false"]
+    command: ["start-dev", "--hostname=http://localhost:8080", "--hostname-strict=false", "--hostname-backchannel-dynamic=true"]
 
   keycloak-init:
     build:
-      context: keycloak-init
+      context: ./infra/common/keycloak-init
       dockerfile: Dockerfile
     depends_on:
       - keycloak
@@ -124,7 +124,9 @@ services:
 
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
-    restart: always
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
     environment:
       OAUTH2_PROXY_PROVIDER: oidc
       OAUTH2_PROXY_REDIRECT_URL: http://localhost:9000/oauth2/callback
@@ -134,6 +136,7 @@ services:
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       OAUTH2_PROXY_WHITELIST_DOMAINS: localhost,backend
       OAUTH2_PROXY_PASS_ACCESS_TOKEN: true
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: true
       OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: true
       OAUTH2_PROXY_SKIP_OIDC_EMAIL_VERIFICATION: true
       OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL}
@@ -147,15 +150,10 @@ services:
       - app-network
     ports:
       - 127.0.0.1:9000:9000
-    # I wasn't able to get things working without this
-    extra_hosts:
-      - localhost:host-gateway
 
 
 volumes:
   db-data:
-  localstack-data:
-  backend-pip-cache:
   keycloak-data:
 
 

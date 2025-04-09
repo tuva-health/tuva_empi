@@ -1,5 +1,9 @@
 # Tuva EMPI
 
+## Docs
+
+https://tuva-health.github.io/tuva_empi/docs/
+
 ## Development
 
 ### Installation
@@ -48,7 +52,7 @@ Alternatively, there is a more secure approach to storing these configuration fi
 
 See README.md files in `frontend` and `backend` directories.
 
-## Setting up Git hooks
+### Setting up Git hooks
 
 After cloning the repository, run the following command to set up the Git hooks:
 

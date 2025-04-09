@@ -1,7 +1,10 @@
 {
     "name": "Tuva EMPI frontend dev container",
-    "dockerComposeFile": ["../docker-compose.yml"],
-    "service": "frontend",
+    "dockerComposeFile": [
+        "../../docker-compose.yml",
+        "../../docker-compose.dev.yml"
+    ],
+    "service": "frontend-dev",
     "shutdownAction": "none",
     "workspaceFolder": "/app",
     "mounts": [

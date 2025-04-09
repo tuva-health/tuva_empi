@@ -1,0 +1,11 @@
+#!/bin/bash
+# Run docker compose commands with dev compose files
+
+if [ -z "$1" ]; then
+  echo "Usage: $0 <docker-compose-command>"
+  exit 1
+fi
+
+COMPOSE_FILES="-f docker-compose.yml -f docker-compose.dev.yml"
+
+docker compose $COMPOSE_FILES "$@"

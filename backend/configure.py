@@ -5,6 +5,16 @@ from main.util.secrets_manager import SecretsManagerClient
 
 
 def get_config() -> None:
+    config_path = os.environ["DEST_CONFIG_FILE"]
+
+    if os.path.exists(config_path):
+        print(
+            f"Config already exists at {config_path}, not pulling from AWS Secrets Manager"
+        )
+        return
+
+    print("Attempting to pull config from AWS Secrets Manager")
+
     secret = SecretsManagerClient().get_secret(
         os.environ["TUVA_EMPI_CONFIG_SECRET_ARN"]
     )
@@ -14,7 +24,7 @@ def get_config() -> None:
     except Exception as e:
         raise Exception("Unexpected Tuva EMPI config secret format") from e
 
-    with open(os.environ["DEST_CONFIG_FILE"], "w") as file:
+    with open(config_path, "w") as file:
         json.dump(config, file, indent=4)
 
 

@@ -1,6 +1,6 @@
 ---
 id: index
-title: Getting Started
+title: Getting started
 sidebar_position: 0
 ---
 
@@ -8,10 +8,10 @@ sidebar_position: 0
 
 To get started with installing and using Tuva EMPI, you have a couple options.
 
-## Development environment
+## Local demo environment
 
-If you'd like to simply evaluate Tuva EMPI in a local environment, see [README.md](https://github.com/tuva-health/tuva_empi).
+If you'd like to simply evaluate Tuva EMPI in a local environment, see [Local demo environment](./local-demo-environment.md).
 
 ## Production environment
 
-Otherwise, if you are looking for guidance on how to deploy Tuva EMPI in a production environment, see [Production Environment](./production-environment).
+Otherwise, if you are looking for guidance on how to deploy Tuva EMPI in a production environment, see [Production environment](./production-environment).
