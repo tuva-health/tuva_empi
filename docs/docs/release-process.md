@@ -146,6 +146,7 @@ The project uses reusable GitHub Actions workflows for consistent building and r
 The following actions happen automatically:
 
 1. On push to `main` or `build-dev/*`:
+
    - Triggers build workflows
    - Images tagged with commit SHA
    - Images pushed to [GitHub Container Registry](https://github.com/orgs/tuva-health/packages)
