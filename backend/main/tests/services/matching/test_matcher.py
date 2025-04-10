@@ -35,7 +35,7 @@ from main.models import (
 )
 from main.services.empi.empi_service import EMPIService
 from main.services.matching.matcher import Matcher
-from main.tests.util.concurrency import run_with_lock_contention
+from main.tests.testing.concurrency import run_with_lock_contention
 from main.util.dict import select_keys
 from main.util.sql import load_df
 
