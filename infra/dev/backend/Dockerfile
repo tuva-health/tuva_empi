@@ -1,12 +1,40 @@
+# https://hub.docker.com/layers/library/golang/1.24.2-bookworm/images/sha256-f131450e65b90b66a3ea6814a9594eca717ef50d8333092a9c8afd50d6c2e210
+FROM golang:1.24.2-bookworm@sha256:75e6700eab3c994f730e36f357a26ee496b618d51eaecb04716144e861ad74f3 as tuva-empi-backend-kind-builder
+
+RUN go install sigs.k8s.io/kind@v0.27.0
+
 # https://hub.docker.com/layers/library/python/3.13.1-bookworm/images/sha256-8eed0b2dee7938ad0e39fbdd1aa8bc026501e4c3f829a8e4512db690a68a90f9?context=explore
 FROM python:3.13.1-bookworm@sha256:3b1b63f17c5197411ee572be110333dae4b9d6f2fbc4f84c790f644e791d356b
 
 SHELL ["/bin/bash", "-c"]
 
+COPY --from=tuva-empi-backend-kind-builder /go/bin/kind /usr/local/bin/kind
+
 RUN apt update && apt upgrade -y
 RUN apt install -y postgresql-common
 RUN YES=yes /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
-RUN apt install -y postgresql-client-17 gnupg less
+RUN apt install -y postgresql-client-17 gnupg less apt-transport-https ca-certificates curl entr socat
+
+# Install Docker CLI
+# https://docs.docker.com/engine/install/debian/#install-using-the-repository
+
+RUN install -m 0755 -d /etc/apt/keyrings
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+RUN chmod a+r /etc/apt/keyrings/docker.asc
+RUN echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+    tee /etc/apt/sources.list.d/docker.list > /dev/null
+RUN apt update && apt install -y docker-ce-cli
+
+# Install kubectl
+# https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#install-using-native-package-management
+
+RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+RUN chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+RUN echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
+RUN chmod 644 /etc/apt/sources.list.d/kubernetes.list
+RUN apt update && apt install -y kubectl
 
 # Install AWS CLI v2
 # https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html

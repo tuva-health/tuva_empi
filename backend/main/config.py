@@ -2,7 +2,7 @@ import json
 import os
 from enum import Enum
 from functools import cache
-from typing import Literal, TypedDict, cast
+from typing import Literal, Optional, TypedDict, cast
 
 
 class DbConfigDict(TypedDict):
@@ -51,12 +51,36 @@ class InitialSetupConfigDict(TypedDict):
     admin_email: str
 
 
+class K8sJobRunnerSecretVolumeConfigDict(TypedDict):
+    secret_name: str
+    secret_key: str
+    mount_path: str
+
+
+class K8sJobRunnerConfigDict(TypedDict):
+    job_image: str
+    job_image_pull_policy: Literal["Always", "IfNotPresent", "Never"]
+    job_config_secret_volume: K8sJobRunnerSecretVolumeConfigDict
+    job_service_account_name: Optional[str]
+
+
+class JobRunnerType(Enum):
+    process = "process"
+    k8s = "k8s"
+
+
+class MatchingServiceConfigDict(TypedDict):
+    job_runner: Literal[JobRunnerType.process, JobRunnerType.k8s]
+    k8s_job_runner: K8sJobRunnerConfigDict
+
+
 class ConfigDict(TypedDict):
     env: str
     db: DbConfigDict
     django: DjangoConfigDict
     idp: IdpConfigDict
     initial_setup: InitialSetupConfigDict
+    matching_service: MatchingServiceConfigDict
 
 
 # FIXME: Add validation with DRF serializer or Pydantic model
