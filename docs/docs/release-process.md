@@ -14,15 +14,29 @@ This document outlines the release process for the Tuva EMPI project.
 
 ![Tuva EMPI Branching and Versioning Strategy](/img/branching-strategy.png)
 
-## Release Types
+## Release Scenarios
 
-### 1. Dev Release from Main
+### 1. Production Release from Main
+- Used for major/minor version releases
+- Creates a new release branch
+- Updates version number
+- Creates Git tag and GitHub Release
 
-- Happens automatically on push to main
-- Images tagged with commit SHA
-- No version change required
+### 2. Bugfix Release from Release Branch
+- Used for patch releases
+- Made directly on release branch
+- Increments patch version
+- Creates Git tag and GitHub Release
 
-### 2. Release Candidate Process
+### 3. Backport from Main to Release Branch
+- Used to port critical fixes from main
+- Cherry-picks specific commits
+- Increments patch version
+- Creates Git tag and GitHub Release
+
+## Release Process Steps
+
+### Production Release Process
 
 ```bash
 # Create release branch
@@ -45,7 +59,7 @@ git commit -m "Prepare release v1.2.0"
 git push origin prepare-v1.2.0
 ```
 
-### 3. Bugfix Release
+### Bugfix Release Process
 
 ```bash
 # Checkout release branch
@@ -66,7 +80,7 @@ git commit -m "Fix issue #123"
 git push origin fix/issue-123
 ```
 
-### 4. Backport from Main
+### Backport Process
 
 ```bash
 # Identify commit to backport
@@ -129,15 +143,14 @@ The project uses reusable GitHub Actions workflows for consistent building and r
 The following actions happen automatically:
 
 1. On push to `main` or `build-dev/*`:
-
    - Triggers build workflows
    - Images tagged with commit SHA
-   - Images pushed to GitHub Container Registry
+   - Images pushed to [GitHub Container Registry](https://github.com/orgs/tuva-health/packages)
 
 2. On merge to `release/*` branch with VERSION change:
-   - Creates Git tag and GitHub Release
+   - Creates [Git tag](https://github.com/tuva-health/tuva_empi/tags) and [GitHub Release](https://github.com/tuva-health/tuva_empi/releases)
    - Triggers build workflows with version tag
-   - If previous version was -dev:
+   - If previous version was `-dev`:
      - Creates PR to bump main to next dev version
 
 ## Version Format
@@ -149,6 +162,4 @@ The following actions happen automatically:
 ## Notes
 
 - Only one active release branch is supported at a time
-- Backports are only supported for the current release branch
 - All changes must go through PR review process
-- Version can be overridden in release workflow using workflow dispatch
