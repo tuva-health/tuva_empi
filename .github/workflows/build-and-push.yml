@@ -1,0 +1,26 @@
+name: Build and Push Images
+on:
+  push:
+    branches:
+      - main
+      - 'build-dev/*'
+      - 'test/github-actions'
+
+jobs:
+  build-backend:
+    uses: ./.github/workflows/build-backend.yml
+    with:
+      push_image: true
+      image_name: ghcr.io/${{ github.repository || 'tuva-health/tuva_empi' }}-backend
+      image_tag: ${{ github.sha }}
+    secrets:
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-frontend:
+    uses: ./.github/workflows/build-frontend.yml
+    with:
+      push_image: true
+      image_name: ghcr.io/${{ github.repository || 'tuva-health/tuva_empi' }}-frontend
+      image_tag: ${{ github.sha }}
+    secrets:
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}

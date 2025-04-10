@@ -1,0 +1,118 @@
+name: Release
+on:
+  push:
+    branches:
+      - 'release/*'
+      - 'test/github-actions'
+    paths:
+      - 'VERSION'
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: ${{ github.repository }}-backend
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}-frontend
+
+jobs:
+  process-release:
+    name: Process Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version info
+        id: version
+        run: |
+          # Make script executable
+          chmod +x ./scripts/version.sh
+
+          # Get current version
+          VERSION=$(./scripts/version.sh get)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          # Check if dev version
+          WAS_DEV=$(git show HEAD^:VERSION | ./scripts/version.sh is-dev)
+          echo "was_dev=${WAS_DEV}" >> $GITHUB_OUTPUT
+
+      - name: Create Release Tag
+        run: |
+          git tag v${{ steps.version.outputs.version }}
+          git push origin v${{ steps.version.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      - name: Create Version Bump PR
+        if: steps.version.outputs.was_dev == 'true'
+        run: |
+          # Get next version
+          NEXT_VERSION=$(./scripts/version.sh bump-dev)
+
+          # Create branch for version bump
+          git checkout main
+          git checkout -b bump-version-${NEXT_VERSION}
+
+          # Update VERSION file
+          echo "${NEXT_VERSION}" > VERSION
+
+          # Commit and push
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add VERSION
+          git commit -m "Bump version to ${NEXT_VERSION}"
+          git push origin bump-version-${NEXT_VERSION}
+
+          # Create PR
+          gh pr create \
+            --title "Bump version to ${NEXT_VERSION}" \
+            --body "Automated version bump after release" \
+            --base main \
+            --head bump-version-${NEXT_VERSION}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:v${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:v${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
