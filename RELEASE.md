@@ -2,6 +2,10 @@
 
 This document outlines the release process for the Tuva EMPI project.
 
+## Branching and Versioning Strategy
+
+![Tuva EMPI Branching and Versioning Strategy](docs/images/branching-strategy.png)
+
 ## Release Types
 
 1. **Dev Release from Main**
@@ -88,23 +92,36 @@ The project includes a version management script at `scripts/version.sh` with th
 ./scripts/version.sh bump-dev
 ```
 
+## CI/CD Workflows
+
+The project uses reusable GitHub Actions workflows for consistent building and releasing:
+
+1. **Build Workflows** (`.github/workflows/build-{backend,frontend}.yml`)
+   - Reusable workflows for building Docker images
+   - Support both development and release builds
+   - Handle image tagging and pushing to GitHub Container Registry
+   - Used by both dev builds and releases
+
+2. **Release Workflow** (`.github/workflows/release.yml`)
+   - Triggers on VERSION file changes in release branches
+   - Creates Git tags and GitHub Releases
+   - Reuses build workflows for consistent image building
+   - Handles version bumping on main after releases
+
 ## Automated Actions
 
 The following actions happen automatically:
 
 1. On push to `main` or `build-dev/*`:
-   - Build Docker images
-   - Tag with commit SHA
-   - Push to GitHub Container Registry
+   - Triggers build workflows
+   - Images tagged with commit SHA
+   - Images pushed to GitHub Container Registry
 
 2. On merge to `release/*` branch with VERSION change:
-   - Create Git tag
-   - Create GitHub Release
-   - Build Docker images
-   - Tag with version
-   - Push to GitHub Container Registry
+   - Creates Git tag and GitHub Release
+   - Triggers build workflows with version tag
    - If previous version was -dev:
-     - Create PR to bump main to next dev version
+     - Creates PR to bump main to next dev version
 
 ## Version Format
 
