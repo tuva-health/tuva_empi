@@ -126,7 +126,6 @@ The project includes a version management script at `scripts/version.sh` with th
 The project uses reusable GitHub Actions workflows for consistent building and releasing:
 
 ### Build Workflows
-
 - Located in `.github/workflows/build-{backend,frontend}.yml`
 - Reusable workflows for building Docker images
 - Support both development and release builds
@@ -134,7 +133,6 @@ The project uses reusable GitHub Actions workflows for consistent building and r
 - Used by both dev builds and releases
 
 ### Release Workflow
-
 - Located in `.github/workflows/release.yml`
 - Triggers on VERSION file changes in release branches
 - Creates Git tags and GitHub Releases
