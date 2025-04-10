@@ -17,11 +17,13 @@ This document outlines the release process for the Tuva EMPI project.
 ## Release Types
 
 ### 1. Dev Release from Main
+
 - Happens automatically on push to main
 - Images tagged with commit SHA
 - No version change required
 
 ### 2. Release Candidate Process
+
 ```bash
 # Create release branch
 git checkout main
@@ -44,6 +46,7 @@ git push origin prepare-v1.2.0
 ```
 
 ### 3. Bugfix Release
+
 ```bash
 # Checkout release branch
 git checkout release/v1.2.0
@@ -64,6 +67,7 @@ git push origin fix/issue-123
 ```
 
 ### 4. Backport from Main
+
 ```bash
 # Identify commit to backport
 git log main --oneline
@@ -105,6 +109,7 @@ The project includes a version management script at `scripts/version.sh` with th
 The project uses reusable GitHub Actions workflows for consistent building and releasing:
 
 ### Build Workflows
+
 - Located in `.github/workflows/build-{backend,frontend}.yml`
 - Reusable workflows for building Docker images
 - Support both development and release builds
@@ -112,6 +117,7 @@ The project uses reusable GitHub Actions workflows for consistent building and r
 - Used by both dev builds and releases
 
 ### Release Workflow
+
 - Located in `.github/workflows/release.yml`
 - Triggers on VERSION file changes in release branches
 - Creates Git tags and GitHub Releases
@@ -123,6 +129,7 @@ The project uses reusable GitHub Actions workflows for consistent building and r
 The following actions happen automatically:
 
 1. On push to `main` or `build-dev/*`:
+
    - Triggers build workflows
    - Images tagged with commit SHA
    - Images pushed to GitHub Container Registry
