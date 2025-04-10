@@ -31,6 +31,8 @@ services:
       # APIs, you can. We don't mount it by default.
       - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
       - ${TUVA_EMPI_CONFIG_FILE}:/app/backend/config/local.json
+      # Docker socket for k8s testing via `kind`
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - app-network
     expose:
