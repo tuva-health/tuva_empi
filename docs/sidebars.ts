@@ -14,38 +14,38 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
  */
 const sidebars: SidebarsConfig = {
   tutorialSidebar: [
-    'tuva-empi',
-    'contribute',
+    "tuva-empi",
+    "contribute",
     {
-      type: 'category',
-      label: 'Getting Started',
+      type: "category",
+      label: "Getting Started",
       items: [
-        'getting-started/index',
-        'getting-started/local-demo-environment',
-        'getting-started/production-environment',
+        "getting-started/index",
+        "getting-started/local-demo-environment",
+        "getting-started/production-environment",
         {
-          type: 'category',
-          label: 'Local Development',
+          type: "category",
+          label: "Local Development",
           items: [
-            'getting-started/local-development/common-setup',
-            'getting-started/local-development/backend-installation',
-            'getting-started/local-development/frontend-installation'
-          ]
-        }
-      ]
+            "getting-started/local-development/common-setup",
+            "getting-started/local-development/backend-installation",
+            "getting-started/local-development/frontend-installation",
+          ],
+        },
+      ],
     },
     {
-      type: 'category',
-      label: 'Releases',
+      type: "category",
+      label: "Releases",
       items: [
-        'releases/index',
-        'releases/branching-and-versioning',
-        'releases/release-process',
-        'releases/release-scenarios',
-        'releases/additional-details'
-      ]
-    }
-  ]
+        "releases/index",
+        "releases/branching-and-versioning",
+        "releases/release-process",
+        "releases/release-scenarios",
+        "releases/additional-details",
+      ],
+    },
+  ],
 };
 
 export default sidebars;

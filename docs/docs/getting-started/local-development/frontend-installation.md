@@ -35,4 +35,3 @@ Then, on the host, in a web browser, visit `localhost:9000`
 1. Delete `node_modules` folder prior to running `npm install`
 1. Remove and restart docker container `docker rm tuva-empi-frontend-1` before building and starting the container.
 1. Ensure docker login `docker login`
-

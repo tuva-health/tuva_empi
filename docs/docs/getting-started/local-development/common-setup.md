@@ -40,7 +40,6 @@ Alternatively, there is a more secure approach to storing these configuration fi
   1. `chmod 0600 ~/.secret/tuva_empi/local.json`
   1. `ln -s ~/.secret/tuva_empi/local.json backend/config/local.json`
 
-
 #### VS Code
 
 1. With VS Code, just open the repository root directory and you should be prompted to open the project in a dev container. Otherwise you can open the command palette and run: `Dev Containers: Rebuild and Reopen in Container`
