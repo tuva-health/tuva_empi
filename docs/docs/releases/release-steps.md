@@ -74,4 +74,3 @@ echo "1.2.1" > VERSION
 git checkout -b backport-feature-xyz
 git push origin backport-feature-xyz
 ```
-
