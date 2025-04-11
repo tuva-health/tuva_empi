@@ -3,7 +3,7 @@ id: release-process
 title: "Release Process Steps"
 hide_title: true
 hide_table_of_contents: true
-sidebar_position: 3
+sidebar_position: 1
 ---
 
 ## Release Process Steps
