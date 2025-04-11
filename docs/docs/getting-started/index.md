@@ -1,6 +1,6 @@
 ---
 id: index
-title: Getting started
+title: Overview
 sidebar_position: 0
 ---
 
@@ -11,10 +11,6 @@ To get started with installing and using Tuva EMPI, you have a couple options.
 ## Local Demo Environment
 
 If you'd like to simply evaluate Tuva EMPI in a local environment, see [Local demo environment](./local-demo-environment.md).
-
-## Local Development Installation
-
-If you would like to setup your local development environment for Tuva EMPI, see [local developement setup](./local-development/common-setup.md)
 
 ## Production Environment
 

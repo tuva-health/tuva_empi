@@ -15,7 +15,6 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 const sidebars: SidebarsConfig = {
   tutorialSidebar: [
     "tuva-empi",
-    "contribute",
     {
       type: "category",
       label: "Getting Started",
@@ -23,15 +22,6 @@ const sidebars: SidebarsConfig = {
         "getting-started/index",
         "getting-started/local-demo-environment",
         "getting-started/production-environment",
-        {
-          type: "category",
-          label: "Local Development",
-          items: [
-            "getting-started/local-development/common-setup",
-            "getting-started/local-development/backend-installation",
-            "getting-started/local-development/frontend-installation",
-          ],
-        },
       ],
     },
     {
@@ -39,10 +29,24 @@ const sidebars: SidebarsConfig = {
       label: "Releases",
       items: [
         "releases/index",
-        "releases/branching-and-versioning",
         "releases/release-process",
-        "releases/release-scenarios",
         "releases/additional-details",
+      ],
+    },
+    {
+      type: "category",
+      label: "Contribute",
+      items: [
+        "contribute/index",
+        {
+          type: "category",
+          label: "Local Development",
+          items: [
+            "contribute/local-development/common-setup",
+            "contribute/local-development/backend-installation",
+            "contribute/local-development/frontend-installation",
+          ],
+        },
       ],
     },
   ],
