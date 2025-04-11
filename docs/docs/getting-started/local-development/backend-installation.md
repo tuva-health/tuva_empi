@@ -40,7 +40,8 @@ In a dev container terminal:
 - Run the API dev server: `make run-dev`
 
 Then, in another dev container terminal `cd backend` and run:
-- Create a bucket:  `aws s3api create-bucket --bucket tuva-health-local`
+
+- Create a bucket: `aws s3api create-bucket --bucket tuva-health-local`
 - Upload a person records file: `aws s3 cp main/tests/resources/tuva_synth/tuva_synth_clean.csv s3://tuva-health-local/raw-person-records.csv`
 - Open a web browser on the host and visit `localhost:9000`
 - Sign-in (there is an initial test user created with username `user` and password `test1234`)
