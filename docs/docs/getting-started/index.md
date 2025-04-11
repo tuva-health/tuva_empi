@@ -14,7 +14,7 @@ If you'd like to simply evaluate Tuva EMPI in a local environment, see [Local de
 
 ## Local Development Installation
 
-If you would like to setup your local development environment for Tuva EMPI, see [local developement installation](./local-development/installation.md)
+If you would like to setup your local development environment for Tuva EMPI, see [local developement setup](./local-development/common-setup.md)
 
 ## Production Environment
 
