@@ -1,11 +1,12 @@
 ---
 id: local-demo-environment
-title: "Local demo environment"
+title: "Local Demo Environment"
 hide_title: true
 hide_table_of_contents: true
+sidebar_position: 1
 ---
 
-# Local demo environment
+# Local Demo Environment
 
 If you are exploring Tuva EMPI for the first time, you can run it locally in a demo environment:
 
