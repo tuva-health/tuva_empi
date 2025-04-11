@@ -1,10 +1,11 @@
 ---
 id: production-environment
-title: "Production environment"
+title: "Production Environment"
 hide_title: true
 hide_table_of_contents: true
+sidebar_position: 2
 ---
 
-# Production environment
+# Production Environment
 
 TODO
