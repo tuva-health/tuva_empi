@@ -15,8 +15,8 @@ from psycopg import sql
 from splink import DuckDBAPI, Linker  # type: ignore[import-untyped]
 
 from main.models import (
-    MATCH_UPDATE_LOCK_ID,
     TIMESTAMP_FORMAT,
+    DbLockId,
     Job,
     MatchEvent,
     MatchEventType,
@@ -48,6 +48,7 @@ from main.util.sql import (
     drop_table,
     extract_df,
     load_df,
+    obtain_advisory_lock,
 )
 
 # id: int,
@@ -754,28 +755,6 @@ class Matcher:
         )
 
         return result_df
-
-    def obtain_exclusive_match_update_lock(self, cursor: CursorWrapper) -> bool:
-        self.logger.info(
-            f"Acquiring exclusing lock of MATCH_UPDATE_LOCK_ID ({MATCH_UPDATE_LOCK_ID})"
-        )
-
-        # Block until we obtain lock
-        lock_sql = sql.SQL(
-            """
-                select pg_advisory_xact_lock(%(lock_id)s)
-            """
-        )
-        cursor.execute(lock_sql, {"lock_id": MATCH_UPDATE_LOCK_ID})
-
-        if cursor.rowcount > 0:
-            # pg_advisory_xact_lock returns void
-            self.logger.info(
-                f"Acquired exclusing lock of MATCH_UPDATES_LOCK_ID ({MATCH_UPDATE_LOCK_ID})"
-            )
-            return True
-        else:
-            raise Exception("Failed attempting to obtain MATCH_UPDATE_LOCK")
 
     def extract_current_results_with_lock(
         self,
@@ -1731,17 +1710,22 @@ class Matcher:
     #
 
     def process_job(self, job_id: int) -> None:
-        try:
-            job = Job.objects.get(id=job_id)
-            self.logger.info("Processing job: %s", model_to_dict(job))
-        except Job.DoesNotExist:
-            self.logger.exception("Job does not exist")
-            # We want to throw, since the Matcher is run in it's own process and we want to return
-            # a non-zero exit code if the Job fails.
-            raise
-
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
+                # Obtain (wait for) lock to prevent multiple Matchers from processing jobs at the same time.
+                # Jobs should be processed sequentially.
+                lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_job)
+                assert lock_acquired
+
+                try:
+                    job = Job.objects.get(id=job_id)
+                    self.logger.info("Processing job: %s", model_to_dict(job))
+                except Job.DoesNotExist:
+                    self.logger.exception("Job does not exist")
+                    # We want to throw, since the Matcher is run in it's own process and we want to return
+                    # a non-zero exit code if the Job fails.
+                    raise
+
                 # Create new Persons for PersonRecordStaging rows with job ID.
                 # Then join those new Persons with the PersonRecordStaging rows to link
                 # the FK and insert into the PersonRecord table.
@@ -1762,7 +1746,7 @@ class Matcher:
                     self.logger.info("Job finished")
                     return
 
-                lock_acquired = self.obtain_exclusive_match_update_lock(cursor)
+                lock_acquired = obtain_advisory_lock(cursor, DbLockId.match_update)
                 assert lock_acquired
 
                 # Lock and retrieve current SplinkResults
