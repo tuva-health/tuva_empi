@@ -3,7 +3,7 @@ id: additional-details
 title: "Additional Details"
 hide_title: true
 hide_table_of_contents: true
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 ## Version Management

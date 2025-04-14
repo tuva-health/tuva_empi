@@ -1,9 +1,9 @@
 ---
 id: release-process
-title: "Release Process Steps"
+title: "Steps"
 hide_title: true
 hide_table_of_contents: true
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 ## Release Process Steps

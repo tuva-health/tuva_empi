@@ -4,33 +4,15 @@ title: Overview
 sidebar_position: 0
 ---
 
-# Release Process
+# Releases
 
-This document outlines the release process for the Tuva EMPI project.
+The latest releases of Tuva EMPI can be found on our [GitHub Releases page](https://github.com/tuva-health/tuva_empi/releases).
 
-## Release Scenarios
+Each release includes:
 
-### 1. Production Release from Main
+- Version number
+- Release notes
+- Downloadable assets
+- Changelog
 
-- Used for major/minor version releases
-- Creates a new release branch
-- Updates version number
-- Creates Git tag and GitHub Release
-
-### 2. Bugfix Release from Release Branch
-
-- Used for patch releases
-- Made directly on release branch
-- Increments patch version
-- Creates Git tag and GitHub Release
-
-### 3. Backport from Main to Release Branch
-
-- Used to port critical fixes from main
-- Cherry-picks specific commits
-- Increments patch version
-- Creates Git tag and GitHub Release
-
-## Branching and Versioning Strategy
-
-![Tuva EMPI Branching and Versioning Strategy](/img/branching-strategy.png)
+For the most up-to-date information about new features, bug fixes, and improvements, please visit the releases page.

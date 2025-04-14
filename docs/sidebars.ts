@@ -27,11 +27,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Releases",
-      items: [
-        "releases/index",
-        "releases/release-process",
-        "releases/additional-details",
-      ],
+      items: ["releases/index"],
     },
     {
       type: "category",
@@ -45,6 +41,16 @@ const sidebars: SidebarsConfig = {
             "contribute/local-development/common-setup",
             "contribute/local-development/backend-installation",
             "contribute/local-development/frontend-installation",
+          ],
+        },
+        {
+          type: "category",
+          label: "Releasing",
+          items: [
+            "contribute/releasing/index",
+            "contribute/releasing/guidelines",
+            "contribute/releasing/release-process",
+            "contribute/releasing/additional-details",
           ],
         },
       ],
