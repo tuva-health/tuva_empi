@@ -64,7 +64,7 @@ class ProcessJobRunnerTestCase(TestCase):
         ]
         mock_sel.get_map.side_effect = [True, False]
 
-        return_code, error_message = self.process_job_runner.run_job(self.job)
+        job_result = self.process_job_runner.run_job(self.job)
 
         # Refresh the job from the database to check for updates
         self.job.refresh_from_db()
@@ -72,9 +72,9 @@ class ProcessJobRunnerTestCase(TestCase):
         self.assertEqual(
             self.job.status, JobStatus.new, "Job status should remain the same"
         )
-        self.assertEqual(return_code, 1)
-        self.assertIsNotNone(error_message)
-        self.assertIn("Out of memory", cast(str, error_message))
+        self.assertEqual(job_result.return_code, 1)
+        self.assertIsNotNone(job_result.error_message)
+        self.assertIn("Out of memory", cast(str, job_result.error_message))
 
     @patch("main.services.matching.process_job_runner.selectors.DefaultSelector")
     @patch("main.services.matching.process_job_runner.subprocess.Popen")
@@ -103,7 +103,7 @@ class ProcessJobRunnerTestCase(TestCase):
         ]
         mock_sel.get_map.side_effect = [True, False]
 
-        return_code, error_message = self.process_job_runner.run_job(self.job)
+        job_result = self.process_job_runner.run_job(self.job)
 
         # Refresh the job from the database to check for updates
         self.job.refresh_from_db()
@@ -111,5 +111,5 @@ class ProcessJobRunnerTestCase(TestCase):
         self.assertEqual(
             self.job.status, JobStatus.new, "Job status should remain the same"
         )
-        self.assertEqual(return_code, 0)
-        self.assertIsNone(error_message)
+        self.assertEqual(job_result.return_code, 0)
+        self.assertIsNone(job_result.error_message)
