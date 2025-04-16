@@ -439,14 +439,12 @@ class MatcherTestCase(TestCase):
 
         person_record_table = PersonRecord._meta.db_table
         now_str = timezone.now().isoformat()
+
         common_person_record = {
             "created": now_str,
             "job_id": job.id,
-            "person_id": person1.id,
             "person_updated": now_str,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
-            "data_source": "example-ds-1",
             "source_person_id": "a1",
             "first_name": "test-first-name",
             "last_name": "test-last-name",
@@ -462,28 +460,29 @@ class MatcherTestCase(TestCase):
             "county": "Test County",
             "phone": "0000000",
         }
+        new_person_records = [
+            {
+                **common_person_record,
+                "person_id": person1.id,
+                "sha256": b"test-sha256-1",
+                "data_source": "example-ds-1",
+            },
+            {
+                **common_person_record,
+                "person_id": person2.id,
+                "sha256": b"test-sha256-2",
+                "data_source": "example-ds-2",
+            },
+        ]
 
-        new_person_record_df = pd.DataFrame(
-            [
-                {
-                    **common_person_record,
-                    "person_id": person1.id,
-                    "data_source": "example-ds-1",
-                },
-                {
-                    **common_person_record,
-                    "person_id": person2.id,
-                    "data_source": "example-ds-2",
-                },
-            ]
-        ).astype(
+        new_person_record_df = pd.DataFrame(new_person_records).astype(
             {
                 col: (
                     "int64"
                     if col in {"job_id", "person_id"}
                     else ("object" if col == "sha256" else "string")
                 )
-                for col in common_person_record.keys()
+                for col in new_person_records[0].keys()
             }
         )
 
@@ -494,7 +493,7 @@ class MatcherTestCase(TestCase):
                 cursor,
                 person_record_table,
                 new_person_record_df,
-                list(common_person_record.keys()),
+                list(new_person_records[0].keys()),
             )
 
             # Extract person records
@@ -511,8 +510,10 @@ class MatcherTestCase(TestCase):
                         "matched_or_reviewed",
                         "sha256",
                     ]
-                ),
-                person_record_df.drop(columns=["id"]),
+                ).sort_index(axis=1),  # sort columns
+                person_record_df.drop(columns=["id"]).sort_index(
+                    axis=1
+                ),  # sort columns
             )
 
     def test_run_splink_prediction(self) -> None:
@@ -562,7 +563,7 @@ class MatcherTestCase(TestCase):
                 "person_id": person.id,
                 "person_updated": timezone.now(),
                 "matched_or_reviewed": timezone.now(),
-                "sha256": b"test-sha",
+                "sha256": b"test-sha256-1",
                 "first_name": "test-first-name",
                 "last_name": "test-last-name",
             },
@@ -573,7 +574,7 @@ class MatcherTestCase(TestCase):
                 "person_id": person.id,
                 "person_updated": timezone.now(),
                 "matched_or_reviewed": timezone.now(),
-                "sha256": b"test-sha",
+                "sha256": b"test-sha256-2",
                 "first_name": "test-first-name",
                 "last_name": "test-last-name",
             },
@@ -584,7 +585,7 @@ class MatcherTestCase(TestCase):
                 "person_id": person.id,
                 "person_updated": timezone.now(),
                 "matched_or_reviewed": timezone.now(),
-                "sha256": b"test-sha",
+                "sha256": b"test-sha256-3",
                 "first_name": "test-first-nam",  # Missing last letter
                 "last_name": "test-last-name",
             },
@@ -595,7 +596,7 @@ class MatcherTestCase(TestCase):
                 "person_id": person.id,
                 "person_updated": timezone.now(),
                 "matched_or_reviewed": timezone.now(),
-                "sha256": b"test-sha",
+                "sha256": b"test-sha256-4",
                 "first_name": "test-first-name-1",
                 "last_name": "test-last-name-1",
             },
@@ -606,7 +607,7 @@ class MatcherTestCase(TestCase):
                 "person_id": person.id,
                 "person_updated": timezone.now(),
                 "matched_or_reviewed": timezone.now(),
-                "sha256": b"test-sha",
+                "sha256": b"test-sha256-5",
                 "first_name": "test-first-name-2",
                 "last_name": "test-last-name-2",
             },
@@ -824,13 +825,10 @@ class MatcherTestCase(TestCase):
         # Load PersonRecords
 
         common_person_record = {
-            "id": 0,
             "created": timezone.now(),
             "job_id": job1.id,
-            "person_id": person1.id,
             "person_updated": timezone.now(),
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "data_source": "example-ds-1",
             "source_person_id": "a1",
             "first_name": "test-first-name",
@@ -848,18 +846,16 @@ class MatcherTestCase(TestCase):
             "phone": "0000000",
         }
         pr1 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "id": 0,
-                "person_id": person1.id,
-            }
+            **common_person_record,
+            id=0,
+            person_id=person1.id,
+            sha256=b"test-sha256-1",
         )
         pr2 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "id": 1,
-                "person_id": person2.id,
-            }
+            **common_person_record,
+            id=1,
+            person_id=person2.id,
+            sha256=b"test-sha256-2",
         )
 
         # Load MatchGroup
@@ -1289,10 +1285,8 @@ class MatcherTestCase(TestCase):
         common_person_record = {
             "created": timezone.now(),
             "job_id": job1.id,
-            "person_id": person1.id,
             "person_updated": timezone.now(),
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "data_source": "example-ds-1",
             "source_person_id": "a1",
             "first_name": "test-first-name",
@@ -1310,28 +1304,24 @@ class MatcherTestCase(TestCase):
             "phone": "0000000",
         }
         pr1 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "person_id": person1.id,
-            }
+            **common_person_record,
+            person_id=person1.id,
+            sha256=b"test-sha256-1",
         )
         pr2 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "person_id": person1.id,
-            }
+            **common_person_record,
+            person_id=person1.id,
+            sha256=b"test-sha256-2",
         )
         pr3 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "person_id": person2.id,
-            }
+            **common_person_record,
+            person_id=person2.id,
+            sha256=b"test-sha256-3",
         )
         pr4 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "person_id": person3.id,
-            }
+            **common_person_record,
+            person_id=person3.id,
+            sha256=b"test-sha256-4",
         )
 
         self.assertEqual(pr1.person_id, person1.id)
@@ -1516,7 +1506,6 @@ class MatcherTestCase(TestCase):
             "created": timezone.now(),
             "job_id": job.id,
             "data_source": "example-ds-1",
-            "source_person_id": "a1",
             "first_name": "test-first-name",
             "last_name": "test-last-name",
             "sex": "F",
@@ -1532,13 +1521,13 @@ class MatcherTestCase(TestCase):
             "phone": "0000000",
         }
         PersonRecordStaging.objects.create(
-            **{**common_person_record, "source_person_id": "a1"}
+            **common_person_record, source_person_id="a1"
         )
         PersonRecordStaging.objects.create(
-            **{**common_person_record, "source_person_id": "a2"}
+            **common_person_record, source_person_id="a2"
         )
         PersonRecordStaging.objects.create(
-            **{**common_person_record, "source_person_id": "a2"}
+            **common_person_record, source_person_id="a2"
         )
 
         self.assertEqual(PersonRecordStaging.objects.count(), 3)
@@ -1683,7 +1672,6 @@ class MatcherTestCase(TestCase):
             "created": timezone.now(),
             "job_id": job.id,
             "data_source": "example-ds-1",
-            "source_person_id": "a1",
             "first_name": "test-first-name",
             "last_name": "test-last-name",
             "sex": "F",
@@ -1699,13 +1687,13 @@ class MatcherTestCase(TestCase):
             "phone": "0000000",
         }
         PersonRecordStaging.objects.create(
-            **{**common_person_record, "source_person_id": "a1"}
+            **common_person_record, source_person_id="a1"
         )
         PersonRecordStaging.objects.create(
-            **{**common_person_record, "source_person_id": "a2"}
+            **common_person_record, source_person_id="a2"
         )
         PersonRecordStaging.objects.create(
-            **{**common_person_record, "source_person_id": "a2"}
+            **common_person_record, source_person_id="a2"
         )
 
         self.assertEqual(PersonRecordStaging.objects.count(), 3)
@@ -1828,13 +1816,10 @@ class MatcherWithLockingTestCase(TransactionTestCase):
         )
 
         common_person_record = {
-            "id": 0,
             "created": timezone.now(),
-            "job_id": job1.id,
             "person_id": person1.id,
             "person_updated": timezone.now(),
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "data_source": "example-ds-1",
             "source_person_id": "a1",
             "first_name": "test-first-name",
@@ -1853,18 +1838,16 @@ class MatcherWithLockingTestCase(TransactionTestCase):
         }
 
         pr1 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "id": 0,
-                "job_id": job1.id,
-            }
+            **common_person_record,
+            id=0,
+            job_id=job1.id,
+            sha256=b"test-sha256-1",
         )
         pr2 = PersonRecord.objects.create(
-            **{
-                **common_person_record,
-                "id": 1,
-                "job_id": job1.id,
-            }
+            **common_person_record,
+            id=1,
+            job_id=job1.id,
+            sha256=b"test-sha256-2",
         )
 
         # Active and unmatched from job1
@@ -2076,13 +2059,10 @@ class MatcherWithLockingTestCase(TransactionTestCase):
         )
 
         common_person_record = {
-            "id": 0,
             "created": timezone.now(),
             "job_id": job.id,
-            "person_id": person1.id,
             "person_updated": timezone.now(),
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "data_source": "example-ds-1",
             "source_person_id": "a1",
             "first_name": "test-first-name",
@@ -2105,21 +2085,25 @@ class MatcherWithLockingTestCase(TransactionTestCase):
                 **common_person_record,
                 "id": 0,
                 "person_id": person1.id,
+                "sha256": b"test-sha256-1",
             },
             {
                 **common_person_record,
                 "id": 1,
                 "person_id": person2.id,
+                "sha256": b"test-sha256-2",
             },
             {
                 **common_person_record,
                 "id": 2,
                 "person_id": person3.id,
+                "sha256": b"test-sha256-3",
             },
             {
                 **common_person_record,
                 "id": 3,
                 "person_id": person4.id,
+                "sha256": b"test-sha256-4",
             },
         ]
 

@@ -62,7 +62,7 @@ class ConfigDict(TypedDict):
 # FIXME: Add validation with DRF serializer or Pydantic model
 @cache
 def get_config() -> ConfigDict:
-    with open(os.environ["CONFIG_FILE"], "r") as f:
+    with open(os.environ["TUVA_EMPI_CONFIG_FILE"], "r") as f:
         config = cast(ConfigDict, json.load(f))
 
         return config
