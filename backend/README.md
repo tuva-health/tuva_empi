@@ -87,7 +87,7 @@ In the dev container:
 
 #### Testing with kind
 
-If you'd like to deploy the backend on k8s to test the k8s Match Worker, you can use kind. kind is included in the backend dev container. kind works by running k8s in Docker using your host's Docker instance (the Docker socket is mounted to the backend dev container).
+If you'd like to deploy the backend on k8s to test the k8s MatchingService, you can use kind. kind is included in the backend dev container. kind works by running k8s in Docker using your host's Docker instance (the Docker socket is mounted to the backend dev container).
 
 First make sure you are in the `backend` directory:
 
@@ -106,15 +106,18 @@ However, each time you rebuild the backend container, you need to update the kub
 
 Then you can deploy the backend as a pod:
 
-1. Load the image: `kind load docker-image tuva-empi-backend-dev:latest --name dev`
+1. Build the production image: `docker build -t tuva-empi-backend .`
+1. Load the dev and production image:
+   1. `kind load docker-image tuva-empi-backend-dev:latest --name dev`
+   1. `kind load docker-image tuva-empi-backend:latest --name dev`
 1. Deploy the backend: `kubectl apply -k /app/infra/dev/backend/k8s`
 1. Get pod name: `kubectl get pods`
 1. Copy backend directory: `kubectl cp /app/backend {POD_NAME}:/app/`
-1. In a new terminal, exec into the pod and start the Match Worker:
+1. In a new terminal, exec into the pod and start the Match Service:
    1. `kubectl exec -it {POD_NAME} -- /bin/bash`
-   1. Install dependencies and run migrations as usual
-   1. Export the k8s config secret env variable: `export TUVA_EMPI_BACKEND_CONFIG_K8S_SECRET_NAME=tuva-empi-backend-dev-config`
-   1. Run the Match Worker: `make worker`
+   1. Install dependencies as usual
+   1. Export the k8s config secret env variable: `export CONFIG_FILE=/app/backend/config/local.json`
+   1. Run the Matching Service: `python manage.py run_matching_service`
 1. To sync source code changes to the pod, open a new terminal: `find /app/backend -type f | entr -r kubectl cp /app/backend {POD_NAME}:/app/`
 
 

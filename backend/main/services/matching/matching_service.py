@@ -16,6 +16,7 @@ from main.models import (
     PersonRecordStaging,
 )
 from main.services.matching.job_runner import JobRunner
+from main.services.matching.k8s_job_runner import K8sJobRunner
 from main.services.matching.process_job_runner import ProcessJobRunner
 from main.util.sql import obtain_advisory_lock
 
@@ -27,10 +28,20 @@ class MatchingService:
 
     def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
-        self.job_runner = ProcessJobRunner()
+        self.job_runner = self._get_job_runner()
         self.cancel = False
 
         signal.signal(signal.SIGINT, self.handle_sigint)
+
+    def _get_job_runner(self) -> JobRunner:
+        job_runner = get_config()["matching_service"]["job_runner"]
+
+        if job_runner == JobRunnerType.process.value:
+            return ProcessJobRunner()
+        elif job_runner == JobRunnerType.k8s.value:
+            return K8sJobRunner()
+        else:
+            raise Exception("Job runner required")
 
     def handle_sigint(self, _: int, __: Optional[FrameType]) -> None:
         if not self.cancel:

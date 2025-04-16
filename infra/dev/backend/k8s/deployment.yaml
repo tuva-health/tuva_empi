@@ -24,7 +24,7 @@ spec:
             - containerPort: 8000
           resources:
             requests:
-              cpu: "1"
-              memory: 1000M
+              cpu: "2"
+              memory: 2000M
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
