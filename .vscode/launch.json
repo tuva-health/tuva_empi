@@ -13,22 +13,22 @@
             "django": true,
             "justMyCode": true,
             "env": {
-                "CONFIG_FILE": "${workspaceFolder}/backend/config/local.json"
+                "TUVA_EMPI_BACKEND_CONFIG_FILE": "${workspaceFolder}/backend/config/local.json"
             }
         },
         {
-            "name": "BE: EMPIMatching Service",
+            "name": "BE: EMPI Matching Service",
             "type": "debugpy",
             "request": "launch",
             "program": "manage.py",
             "args": [
-                "start_match_worker"
+                "run_matching_service"
             ],
             "cwd": "${workspaceFolder}/backend",
             "django": true,
             "justMyCode": true,
             "env": {
-                "CONFIG_FILE": "config/local.json"
+                "TUVA_EMPI_BACKEND_CONFIG_FILE": "config/local.json"
             }
         },
         {
@@ -44,7 +44,7 @@
             "django": true,
             "justMyCode": true,
             "env": {
-                "CONFIG_FILE": "config/local.json"
+                "TUVA_EMPI_BACKEND_CONFIG_FILE": "config/local.json"
             }
         },
         {

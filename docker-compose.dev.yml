@@ -2,7 +2,10 @@ name: tuva-empi
 
 services:
 
-  backend: !reset null
+  backend-migrate: !reset null
+  backend-bootstrap: !reset null
+  backend-api: !reset null
+  backend-matching-service: !reset null
 
   backend-dev:
     build:
@@ -14,9 +17,7 @@ services:
     tty: true
     environment:
       PYTHONUNBUFFERED: 1
-      # Tuva EMPI configuration file
-      CONFIG_FILE: config/local.json
-      # AWS config for the CLI and Boto3
+      TUVA_EMPI_BACKEND_CONFIG_FILE: /app/backend/config/local.json
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -29,7 +30,6 @@ services:
       # If you'd like to mount an AWS config in order to access AWS
       # APIs, you can. We don't mount it by default.
       - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
-      # Backend config file
       - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/app/backend/config/local.json
     networks:
       - app-network

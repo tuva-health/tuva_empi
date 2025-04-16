@@ -4,7 +4,7 @@ from main.services.matching.matching_service import MatchingService
 
 
 class Command(BaseCommand):
-    help = "Starts match worker process"
+    help = "Starts MatchingService"
 
     def handle(self, *args: str, **options: str) -> None:
         MatchingService().start()
