@@ -5,19 +5,19 @@
 set -euo pipefail
 
 mode="$1"
-config_path="${TUVA_EMPI_BACKEND_CONFIG_FILE:-/usr/local/etc/tuva-empi/deployment.json}"
+config_path="${TUVA_EMPI_CONFIG_FILE:-/usr/local/etc/tuva-empi/deployment.json}"
 
 # Retrieve configuration if not available locally
 DEST_CONFIG_FILE="$config_path" python configure.py
 
 if [[ "$mode" == "api" ]]; then
-  TUVA_EMPI_BACKEND_CONFIG_FILE="$config_path" exec gunicorn tuva_empi.wsgi:application --bind 0.0.0.0:8000
+  TUVA_EMPI_CONFIG_FILE="$config_path" exec gunicorn tuva_empi.wsgi:application --bind 0.0.0.0:8000
 elif [[ "$mode" == "matching-service" ]]; then
-  TUVA_EMPI_BACKEND_CONFIG_FILE="$config_path" exec python manage.py run_matching_service
+  TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py run_matching_service
 elif [[ "$mode" == "bootstrap" ]]; then
-  TUVA_EMPI_BACKEND_CONFIG_FILE="$config_path" exec python manage.py bootstrap
+  TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py bootstrap
 elif [[ "$mode" == "migrate" ]]; then
-  TUVA_EMPI_BACKEND_CONFIG_FILE="$config_path" exec python manage.py migrate
+  TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py migrate
 else
   echo "Usage: $0 [api|matching-service|bootstrap|migrate]"
   exit 1
