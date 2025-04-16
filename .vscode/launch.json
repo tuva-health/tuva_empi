@@ -13,7 +13,7 @@
             "django": true,
             "justMyCode": true,
             "env": {
-                "TUVA_EMPI_BACKEND_CONFIG_FILE": "${workspaceFolder}/backend/config/local.json"
+                "TUVA_EMPI_CONFIG_FILE": "${workspaceFolder}/backend/config/local.json"
             }
         },
         {
@@ -28,7 +28,7 @@
             "django": true,
             "justMyCode": true,
             "env": {
-                "TUVA_EMPI_BACKEND_CONFIG_FILE": "config/local.json"
+                "TUVA_EMPI_CONFIG_FILE": "config/local.json"
             }
         },
         {
@@ -44,7 +44,7 @@
             "django": true,
             "justMyCode": true,
             "env": {
-                "TUVA_EMPI_BACKEND_CONFIG_FILE": "config/local.json"
+                "TUVA_EMPI_CONFIG_FILE": "config/local.json"
             }
         },
         {

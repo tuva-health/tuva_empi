@@ -33,9 +33,9 @@ services:
         condition: service_started
     environment:
       PYTHONUNBUFFERED: 1
-      TUVA_EMPI_BACKEND_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
     volumes:
-      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
     networks:
       - app-network
 
@@ -51,7 +51,7 @@ services:
         condition: service_completed_successfully
     environment:
       PYTHONUNBUFFERED: 1
-      TUVA_EMPI_BACKEND_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -60,7 +60,7 @@ services:
       # If you'd like to mount an AWS config in order to access AWS
       # APIs, you can. We don't mount it by default.
       - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
-      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
     networks:
       - app-network
 
@@ -73,7 +73,7 @@ services:
         condition: service_completed_successfully
     environment:
       PYTHONUNBUFFERED: 1
-      TUVA_EMPI_BACKEND_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -82,7 +82,7 @@ services:
       # If you'd like to mount an AWS config in order to access AWS
       # APIs, you can. We don't mount it by default.
       - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
-      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
     networks:
       - app-network
     expose:
@@ -106,9 +106,9 @@ services:
         condition: service_completed_successfully
     environment:
       PYTHONUNBUFFERED: 1
-      TUVA_EMPI_BACKEND_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
     volumes:
-      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
     networks:
       - app-network
 

@@ -55,7 +55,7 @@ matching-service-dev: check
 	python manage.py run_matching_service
 
 configure:
-	@env DEST_CONFIG_FILE="$(TUVA_EMPI_BACKEND_CONFIG_FILE)" python configure.py
+	@env DEST_CONFIG_FILE="$(TUVA_EMPI_CONFIG_FILE)" python configure.py
 
 run:
 	tuva-empi-api

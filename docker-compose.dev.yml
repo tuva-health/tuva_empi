@@ -17,7 +17,7 @@ services:
     tty: true
     environment:
       PYTHONUNBUFFERED: 1
-      TUVA_EMPI_BACKEND_CONFIG_FILE: /app/backend/config/local.json
+      TUVA_EMPI_CONFIG_FILE: /app/backend/config/local.json
       AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -30,7 +30,7 @@ services:
       # If you'd like to mount an AWS config in order to access AWS
       # APIs, you can. We don't mount it by default.
       - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
-      - ${TUVA_EMPI_BACKEND_CONFIG_FILE}:/app/backend/config/local.json
+      - ${TUVA_EMPI_CONFIG_FILE}:/app/backend/config/local.json
     networks:
       - app-network
     expose:
