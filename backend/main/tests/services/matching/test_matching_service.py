@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from main.models import Config, Job, JobStatus
 from main.services.empi.empi_service import EMPIService
+from main.services.matching.job_runner import JobResult
 from main.services.matching.matching_service import MatchingService
 
 
@@ -43,7 +44,7 @@ class MatchingServiceTestCase(TestCase):
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_failure(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should update the Job in the DB if Job runner fails to run the Job."""
-        mock_run_job.return_value = (1, "Out of memory\n")
+        mock_run_job.return_value = JobResult(1, "Out of memory\n")
 
         self.matching_service.run_next_job()
 
@@ -71,7 +72,7 @@ class MatchingServiceTestCase(TestCase):
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_success(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should update the Job in the DB if Job runner succeeds in running the Job."""
-        mock_run_job.return_value = (0, None)
+        mock_run_job.return_value = JobResult(0, None)
 
         self.matching_service.run_next_job()
 
@@ -116,7 +117,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
         # run_job is called by run_next_job after the lock is obtained.
         # We mock the first instance so that we can ensure it's run first and also to introduce
         # an artificial delay.
-        def mock_run_job1(self: Any, job: Job) -> tuple[int, Optional[str]]:
+        def mock_run_job1(self: Any, job: Job) -> JobResult:
             nonlocal t1_exit
 
             # Signal that the MatchingService advisory lock should be held at this point
@@ -129,15 +130,15 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             # Add delay so that we can verify the lock is being held
             time.sleep(3)
 
-            return 0, None
+            return JobResult(return_code=0, error_message=None)
 
         # We mock the second instance so that we can verify it's run second.
-        def mock_run_job2(self: Any, job: Job) -> tuple[int, Optional[str]]:
+        def mock_run_job2(self: Any, job: Job) -> JobResult:
             nonlocal t2_entry
 
             t2_entry = time.time()
 
-            return 0, None
+            return JobResult(return_code=0, error_message=None)
 
         # Run run_next_job and close DB connection
         def run_next_job() -> None:
