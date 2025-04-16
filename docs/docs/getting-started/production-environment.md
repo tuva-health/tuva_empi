@@ -84,7 +84,7 @@ You should fully deploy a new version of the API container before deploying the 
 
 ## Identity Provider
 
-Tuva EMPI relies on an external identity provider for it's authentication needs. Before deploying Tuva EMPI you should setup your external identity provider. See [Architecture](../architecture) for more information on supported identity providers.
+Tuva EMPI relies on an external identity provider for it's authentication needs. Before deploying Tuva EMPI you should setup your external identity provider. See [Architecture](../architecture/overview) for more information on supported identity providers.
 
 :::info
 It's recommended that the identity provider used for Tuva EMPI is only used for Tuva applications and not shared with other applications in your environment. That's because we may depend on features of the identity provider (e.g. JWT claims) in an application-specific way.
