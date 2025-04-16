@@ -42,7 +42,7 @@ Then, in another dev container terminal `cd backend` and run:
 
 #### Processing jobs
 
-- Running the `matching service` so it can process jobs: `make worker`
+- Running the `matching service` so it can process jobs: `make matching-service-dev`
 
 #### Connecting to the DB directly
 

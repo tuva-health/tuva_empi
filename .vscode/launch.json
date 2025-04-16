@@ -22,7 +22,7 @@
             "request": "launch",
             "program": "manage.py",
             "args": [
-                "start_match_worker"
+                "run_matching_service"
             ],
             "cwd": "${workspaceFolder}/backend",
             "django": true,

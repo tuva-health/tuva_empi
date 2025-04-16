@@ -2,18 +2,18 @@ import logging
 import selectors
 import subprocess
 import sys
-from typing import Optional
 
 from main.models import Job
+from main.services.matching.job_runner import JobResult, JobRunner
 
 
-class ProcessJobRunner:
+class ProcessJobRunner(JobRunner):
     logger: logging.Logger
 
     def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
 
-    def run_job(self, job: Job) -> tuple[int, Optional[str]]:
+    def run_job(self, job: Job) -> JobResult:
         process = subprocess.Popen(
             ["python", "manage.py", "run_matcher_process", f"{job.id}"],
             stdout=subprocess.PIPE,
@@ -67,4 +67,4 @@ class ProcessJobRunner:
                 "".join(stderr_lines) if stderr_lines else "Unknown error occurred"
             )
 
-        return process.returncode, error_message
+        return JobResult(return_code=process.returncode, error_message=error_message)

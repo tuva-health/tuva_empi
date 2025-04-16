@@ -1,4 +1,4 @@
-.PHONY: error install install-dev install-all makemigrations migrate bootstrap format lint dmypy check test report run run-dev worker configure configure-and-run
+.PHONY: error install install-dev install-all makemigrations migrate bootstrap format lint dmypy check test report run run-dev matching-service-dev configure run configure-and-run matching-service configure-and-matching-service
 
 error:
 	@echo "Available commands: install, migrate, format, test, run"
@@ -51,8 +51,8 @@ report:
 run-dev: check
 	python manage.py runserver 0.0.0.0:8000
 
-worker: check
-	python manage.py start_match_worker
+matching-service-dev: check
+	python manage.py run_matching_service
 
 configure:
 	DEST_CONFIG_FILE=config/deployment.json python configure.py
@@ -62,3 +62,9 @@ run: migrate bootstrap
 
 configure-and-run: configure
 	CONFIG_FILE=config/deployment.json $(MAKE) run
+
+matching-service: migrate
+	python manage.py run_matching_service
+
+configure-and-matching-service: configure
+	CONFIG_FILE=config/deployment.json $(MAKE) matching-service
