@@ -42,7 +42,7 @@ Then, in another dev container terminal `cd backend` and run:
 
 #### Processing jobs
 
-- Running the `matching service` so it can process jobs: `make worker`
+- Running the `matching service` so it can process jobs: `make matching-service-dev`
 
 #### Connecting to the DB directly
 
@@ -84,6 +84,42 @@ In the dev container:
 1. Login to AWS: `aws sso login`
 1. Check your identity: `aws sts get-caller-identity`
 1. Then follow the steps in `Installation` to run migrations and bootstrap
+
+#### Testing with kind
+
+If you'd like to deploy the backend on k8s to test the k8s MatchingService, you can use kind. kind is included in the backend dev container. kind works by running k8s in Docker using your host's Docker instance (the Docker socket is mounted to the backend dev container).
+
+First make sure you are in the `backend` directory:
+
+1. `cd backend`
+
+Since kind uses the host's Docker instance, you only need to create a cluster once even after rebuilding the backend dev container:
+
+1. Create the cluster: `kind create cluster --name dev`
+1. Attach the kind cluster to our Docker Compose network: `docker network connect tuva-empi_app-network dev-control-plane`
+1. Create a k8s secret for the backend config file: `kubectl create secret generic tuva-empi-backend-dev-config --from-file=deployment.json=config/local.json`
+
+However, each time you rebuild the backend container, you need to update the kubeconfig:
+
+1. Add the kubeconfig from kind to our backend container: `mkdir -p ~/.kube && kind get kubeconfig --name dev > ~/.kube/config`
+1. Update the k8s server so that we can access it from our backend container: `kubectl config set-cluster kind-dev --server=https://dev-control-plane:6443 --insecure-skip-tls-verify=true`
+
+Then you can deploy the backend as a pod:
+
+1. Build the production image: `docker build -t tuva-empi-backend .`
+1. Load the dev and production image:
+   1. `kind load docker-image tuva-empi-backend-dev:latest --name dev`
+   1. `kind load docker-image tuva-empi-backend:latest --name dev`
+1. Deploy the backend: `kubectl apply -k /app/infra/dev/backend/k8s`
+1. Get pod name: `kubectl get pods`
+1. Copy backend directory: `kubectl cp /app/backend {POD_NAME}:/app/`
+1. In a new terminal, exec into the pod and start the Match Service:
+   1. `kubectl exec -it {POD_NAME} -- /bin/bash`
+   1. Install dependencies as usual
+   1. Export the k8s config secret env variable: `export CONFIG_FILE=/app/backend/config/local.json`
+   1. Run the Matching Service: `python manage.py run_matching_service`
+1. To sync source code changes to the pod, open a new terminal: `find /app/backend -type f | entr -r kubectl cp /app/backend {POD_NAME}:/app/`
+
 
 ### Migrations
 

@@ -5,11 +5,14 @@ SHELL ["/bin/bash", "-c"]
 
 RUN apt update && apt upgrade -y
 
-COPY . /app
+COPY ./requirements.txt /app/requirements.txt
+COPY ./Makefile /app/Makefile
 
 WORKDIR /app
 
 RUN make install
+
+COPY . /app
 
 EXPOSE 8000
 
