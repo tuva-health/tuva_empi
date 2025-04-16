@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from main.models import Config, Job, JobStatus
 from main.services.empi.empi_service import EMPIService
+from main.services.matching.job_runner import JobResult
 from main.services.matching.matching_service import MatchingService
 
 
@@ -43,7 +44,7 @@ class MatchingServiceTestCase(TestCase):
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_failure(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should update the Job in the DB if Job runner fails to run the Job."""
-        mock_run_job.return_value = (1, "Out of memory\n")
+        mock_run_job.return_value = JobResult(1, "Out of memory\n")
 
         self.matching_service.run_next_job()
 
@@ -71,7 +72,7 @@ class MatchingServiceTestCase(TestCase):
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_success(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should update the Job in the DB if Job runner succeeds in running the Job."""
-        mock_run_job.return_value = (0, None)
+        mock_run_job.return_value = JobResult(0, None)
 
         self.matching_service.run_next_job()
 
