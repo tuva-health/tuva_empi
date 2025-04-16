@@ -128,7 +128,9 @@ class PersonRecord(models.Model):
     person = models.ForeignKey(Person, on_delete=models.DO_NOTHING)
     person_updated = models.DateTimeField()
     matched_or_reviewed = models.DateTimeField(null=True)
-    sha256 = models.BinaryField()
+    sha256 = models.BinaryField(
+        unique=True
+    )  # unique implies that a btree index is created
     data_source = models.TextField()
     source_person_id = models.TextField()
     first_name = models.TextField()
@@ -147,7 +149,6 @@ class PersonRecord(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["sha256"]),
             models.Index(fields=["data_source"]),
         ]
 
