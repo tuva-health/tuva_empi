@@ -22,7 +22,7 @@
 
 1. cd `.devcontainer/docs`
 1. Build and run the docs dev containers: `docker build -t tuva-empi-docs .`
-1. Attach to the docs dev container: `docker run -it --name tuva-empi-docs tuva-empi-docs`
+1. Attach to the docs dev container: `docker run -it --name tuva-empi-docs -v $PWD/../../docs/:/app/docs -p 127.0.0.1:3000:3000 tuva-empi-docs`
 1. Then inside the dev container:
    ```
    > cd docs
