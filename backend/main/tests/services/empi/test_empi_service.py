@@ -235,7 +235,6 @@ class GetDataSourcesTestCase(TestCase):
             "person_id": person.id,
             "person_updated": now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "first_name": "test-first-name",
             "last_name": "test-last-name",
@@ -252,9 +251,15 @@ class GetDataSourcesTestCase(TestCase):
             "phone": "0000000",
         }
 
-        PersonRecord.objects.create(**common_person_record, data_source="ds1")
-        PersonRecord.objects.create(**common_person_record, data_source="ds2")
-        PersonRecord.objects.create(**common_person_record, data_source="ds1")
+        PersonRecord.objects.create(
+            **common_person_record, sha256=b"test-sha256-1", data_source="ds1"
+        )
+        PersonRecord.objects.create(
+            **common_person_record, sha256=b"test-sha256-2", data_source="ds2"
+        )
+        PersonRecord.objects.create(
+            **common_person_record, sha256=b"test-sha256-3", data_source="ds1"
+        )
 
     def test_get_data_sources(self) -> None:
         """Tests that get_data_sources correctly retrieves unique data sources."""
@@ -319,7 +324,6 @@ class PotentialMatchesTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -385,6 +389,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record1 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -392,6 +397,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Smith",
@@ -399,6 +405,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record3 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -406,6 +413,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record4 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
@@ -413,6 +421,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record5 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person5.id,
+            sha256=b"test-sha256-5",
             data_source="ds5",
             first_name="Tina",
             last_name="Smith",
@@ -420,6 +429,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record6 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person6.id,
+            sha256=b"test-sha256-6",
             data_source="ds6",
             first_name="Tom",
             last_name="Rom",
@@ -791,6 +801,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_a = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_a.id,
+            sha256=b"test-sha256-a",
             data_source="ds_test_a",
             first_name="TestA",
             last_name="MatchTest",
@@ -799,6 +810,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_b = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_b.id,
+            sha256=b"test-sha256-b",
             data_source="ds_test_b",
             first_name="TestB",
             last_name="MatchTest",
@@ -875,6 +887,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_a = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_a.id,
+            sha256=b"test-sha256-a",
             data_source="ds_low_a",
             first_name="LowProb",
             last_name="Test",
@@ -883,6 +896,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_b = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_b.id,
+            sha256=b"test-sha256-b",
             data_source="ds_low_b",
             first_name="LowProb",
             last_name="Test",
@@ -970,6 +984,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person6.id,
+            sha256=b"test-sha256-7",
             data_source="ds7",
             first_name="Jerry",
             last_name="Berry",
@@ -1412,7 +1427,6 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -1478,6 +1492,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record1 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -1486,6 +1501,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Smith",
@@ -1494,6 +1510,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record3 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -1501,6 +1518,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record4 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
@@ -1508,6 +1526,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record5 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person5.id,
+            sha256=b"test-sha256-5",
             data_source="ds5",
             first_name="Tina",
             last_name="Smith",
@@ -1515,6 +1534,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record6 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person6.id,
+            sha256=b"test-sha256-6",
             data_source="ds6",
             first_name="Tom",
             last_name="Rom",
@@ -2421,6 +2441,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record7 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-7",
             data_source="ds7",
             first_name="Jerry",
             last_name="Berry",
@@ -2428,6 +2449,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record8 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-8",
             data_source="ds8",
             first_name="Larry",
             last_name="Dairy",
@@ -2435,6 +2457,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record9 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-9",
             data_source="ds9",
             first_name="Simone",
             last_name="Limone",
@@ -2442,6 +2465,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record10 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-10",
             data_source="ds10",
             first_name="Stacy",
             last_name="Lacy",
@@ -3422,7 +3446,6 @@ class PersonsTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -3464,6 +3487,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -3472,6 +3496,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Lane",
@@ -3479,6 +3504,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -3486,6 +3512,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
@@ -3956,7 +3983,6 @@ class ExportPersonRecordsTestCase(TestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "race": "W",
         }
 
@@ -3980,6 +4006,7 @@ class ExportPersonRecordsTestCase(TestCase):
         self.person_record1 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="test1",
             source_person_id="1",
             first_name="John",
@@ -3999,6 +4026,7 @@ class ExportPersonRecordsTestCase(TestCase):
         self.person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="test2",
             source_person_id="2",
             first_name="Jane",
