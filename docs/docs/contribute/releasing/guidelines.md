@@ -1,14 +1,10 @@
 ---
-id: contribute
-title: "Contribute"
+id: guidelines
+title: "Guidelines"
 hide_title: true
 hide_table_of_contents: true
-sidebar_position: 3
+sidebar_position: 1
 ---
-
-# Contribute to Tuva EMPI
-
-Tuva EMPI source code is hosted at: https://github.com/tuva-health/tuva_empi
 
 ## Release Notes Guidelines
 
