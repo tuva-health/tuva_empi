@@ -4,13 +4,17 @@ on:
     branches:
       - main
       - 'build-dev/*'
+  pull_request:
+    branches:
+      - main
+      - 'build-dev/*'
 
 jobs:
   build-backend:
     uses: ./.github/workflows/build-backend.yml
     with:
-      push_image: true
-      image_name: ghcr.io/${{ github.repository || 'tuva-health/tuva_empi' }}-backend
+      push_image: ${{ github.event_name == 'push' }}
+      image_name: ghcr.io/tuva-health/tuva-empi-backend
       image_tag: ${{ github.sha }}
     secrets:
       REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -18,8 +22,8 @@ jobs:
   build-frontend:
     uses: ./.github/workflows/build-frontend.yml
     with:
-      push_image: true
-      image_name: ghcr.io/${{ github.repository || 'tuva-health/tuva_empi' }}-frontend
+      push_image: ${{ github.event_name == 'push' }}
+      image_name: ghcr.io/tuva-health/tuva-empi-frontend
       image_tag: ${{ github.sha }}
     secrets:
       REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}

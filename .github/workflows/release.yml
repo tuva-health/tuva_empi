@@ -85,7 +85,7 @@ jobs:
     uses: ./.github/workflows/build-backend.yml
     with:
       push_image: true
-      image_name: ghcr.io/${{ github.repository }}-backend
+      image_name: ghcr.io/tuva-health/tuva-empi-backend
       image_tag: v${{ needs.process-release.outputs.version }}
     secrets:
       REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
     uses: ./.github/workflows/build-frontend.yml
     with:
       push_image: true
-      image_name: ghcr.io/${{ github.repository }}-frontend
+      image_name: ghcr.io/tuva-health/tuva-empi-frontend
       image_tag: v${{ needs.process-release.outputs.version }}
     secrets:
       REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
