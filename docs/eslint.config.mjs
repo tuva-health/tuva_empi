@@ -22,7 +22,12 @@ export default tseslint.config(
       },
     },
     settings: {
-      "import/core-modules": ["@theme/Heading", "@docusaurus/router"],
+      "import/core-modules": [
+        "@theme/Heading",
+        "@docusaurus/router",
+        "@docusaurus/Link",
+        "@theme-original/NavbarItem/ComponentTypes",
+      ],
     },
     rules: {
       "@typescript-eslint/explicit-function-return-type": "error",

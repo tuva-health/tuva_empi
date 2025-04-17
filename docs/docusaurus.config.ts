@@ -60,6 +60,12 @@ const config: Config = {
           label: "Docs",
         },
         {
+          type: "custom-NavbarExternalLink",
+          href: "/api-docs",
+          position: "left",
+          label: "API",
+        },
+        {
           href: "https://www.tuvahealth.com",
           position: "right",
           className: "header-tuva-link",

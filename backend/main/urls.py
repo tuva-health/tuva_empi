@@ -1,4 +1,5 @@
 from django.urls import path
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView
 
 from main.views.config import create_config
 from main.views.data_sources import get_data_sources
@@ -22,4 +23,6 @@ urlpatterns = [
     path("matches", create_match, name="create_match"),
     path("persons", get_persons, name="get_persons"),
     path("persons/<str:id>", get_person, name="get_person"),
+    path("schema", SpectacularAPIView.as_view(), name="schema"),
+    path("docs", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 ]

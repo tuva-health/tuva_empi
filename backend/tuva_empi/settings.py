@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "main",
+    "drf_spectacular",
 ]
 
 REST_FRAMEWORK = {
@@ -67,6 +68,15 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Tuva EMPI API",
+    "DESCRIPTION": "",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "REDOC_DIST": "https://cdn.redoc.ly/redoc/latest",
 }
 
 MIDDLEWARE = [

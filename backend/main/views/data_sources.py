@@ -1,4 +1,5 @@
-from rest_framework import status
+from drf_spectacular.utils import extend_schema
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -13,6 +14,19 @@ class GetDataSourcesRequest(Serializer):
     pass
 
 
+class DataSourceSerializer(Serializer):
+    name = serializers.CharField()
+
+
+class GetDataSourcesResponse(Serializer):
+    data_sources = DataSourceSerializer(many=True)
+
+
+@extend_schema(
+    summary="Retrieve data sources",
+    request=GetDataSourcesRequest,
+    responses={200: GetDataSourcesResponse},
+)
 @api_view(["GET"])
 def get_data_sources(request: Request) -> Response:
     """Get data sources."""

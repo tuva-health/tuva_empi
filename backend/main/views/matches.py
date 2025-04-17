@@ -1,5 +1,6 @@
 from typing import Any
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -47,6 +48,17 @@ def get_person_update(update: Any) -> PersonUpdateDict:
     return person_update
 
 
+@extend_schema(
+    summary="Create match",
+    request=CreateMatchRequest,
+    responses={
+        200: {
+            "type": "object",
+            "description": "Empty object",
+            "properties": {},
+        }
+    },
+)
 @api_view(["POST"])
 def create_match(request: Request) -> Response:
     """Create a person record match."""
