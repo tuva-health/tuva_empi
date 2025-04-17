@@ -4,10 +4,7 @@ on:
     branches:
       - main
       - 'build-dev/*'
-  pull_request:
-    branches:
-      - main
-      - 'build-dev/*'
+  pull_request: {}
 
 jobs:
   build-backend:
