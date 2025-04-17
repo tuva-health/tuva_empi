@@ -1,0 +1,689 @@
+openapi: 3.0.3
+info:
+  title: Tuva EMPI API
+  version: 1.0.0
+paths:
+  /api/v1/config:
+    post:
+      operationId: config_create
+      description: Creates a Config object.
+      summary: Create config
+      tags:
+        - config
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConfigRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateConfigResponse"
+          description: ""
+  /api/v1/data-sources:
+    get:
+      operationId: data_sources_retrieve
+      description: Get data sources.
+      summary: Retrieve data sources
+      tags:
+        - data-sources
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetDataSourcesResponse"
+          description: ""
+  /api/v1/health-check:
+    get:
+      operationId: health_check_retrieve
+      description: Check the health of the API.
+      summary: Retrieve health check
+      tags:
+        - health-check
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty object
+                properties: {}
+          description: ""
+  /api/v1/matches:
+    post:
+      operationId: matches_create
+      description: Create a person record match.
+      summary: Create match
+      tags:
+        - matches
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMatchRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty object
+                properties: {}
+          description: ""
+  /api/v1/person-records/export:
+    post:
+      operationId: person_records_export_create
+      description: Export person records to S3 in CSV format.
+      summary: Export person records
+      tags:
+        - person-records
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportPersonRecordsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty object
+                properties: {}
+          description: ""
+  /api/v1/person-records/import:
+    post:
+      operationId: person_records_import_create
+      description: Import person records from an S3 object.
+      summary: Import person records
+      tags:
+        - person-records
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportPersonRecordsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportPersonRecordsResponse"
+          description: ""
+  /api/v1/persons:
+    get:
+      operationId: persons_retrieve
+      description: Get/search for persons.
+      summary: Retrieve persons
+      tags:
+        - persons
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetPersonsResponse"
+          description: ""
+  /api/v1/persons/{id}:
+    get:
+      operationId: persons_retrieve_2
+      description: Get Person by ID.
+      summary: Retrieve person by ID
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      tags:
+        - persons
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetPersonResponse"
+          description: ""
+  /api/v1/potential-matches:
+    get:
+      operationId: potential_matches_retrieve
+      description: Get/search for potential matches.
+      summary: Retrieve potential matches
+      tags:
+        - potential-matches
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetPotentialMatchesResponse"
+          description: ""
+  /api/v1/potential-matches/{id}:
+    get:
+      operationId: potential_matches_retrieve_2
+      description: Get PotentialMatch by ID.
+      summary: Retrieve potential match by ID
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      tags:
+        - potential-matches
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetPotentialMatchResponse"
+          description: ""
+  /api/v1/users:
+    get:
+      operationId: users_retrieve
+      description: Get User objects.
+      summary: Retrieve users
+      tags:
+        - users
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetUsersResponse"
+          description: ""
+  /api/v1/users/{id}:
+    post:
+      operationId: users_create
+      description: Update User role.
+      summary: Update user role
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      tags:
+        - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateUserRoleResponse"
+          description: ""
+components:
+  schemas:
+    BlockingRule:
+      type: object
+      properties:
+        blocking_rule:
+          type: string
+      required:
+        - blocking_rule
+    Comparison:
+      type: object
+      properties:
+        output_column_name:
+          type: string
+        comparison_description:
+          type: string
+        comparison_levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComparisonLevel"
+      required:
+        - comparison_description
+        - comparison_levels
+        - output_column_name
+    ComparisonLevel:
+      type: object
+      properties:
+        sql_condition:
+          type: string
+        label_for_charts:
+          type: string
+        is_null_level:
+          type: boolean
+          default: false
+        m_probability:
+          type: number
+          format: double
+          maximum: 1
+          minimum: 0
+        u_probability:
+          type: number
+          format: double
+          maximum: 1
+          minimum: 0
+        tf_adjustment_column:
+          type: string
+        tf_adjustment_weight:
+          type: number
+          format: double
+      required:
+        - label_for_charts
+        - sql_condition
+    CreateConfigRequest:
+      type: object
+      properties:
+        splink_settings:
+          $ref: "#/components/schemas/SplinkSettings"
+        potential_match_threshold:
+          type: number
+          format: double
+          maximum: 1
+          minimum: 0
+        auto_match_threshold:
+          type: number
+          format: double
+          maximum: 1
+          minimum: 0
+      required:
+        - auto_match_threshold
+        - potential_match_threshold
+        - splink_settings
+    CreateConfigResponse:
+      type: object
+      properties:
+        config_id:
+          type: string
+      required:
+        - config_id
+    CreateMatchRequest:
+      type: object
+      properties:
+        potential_match_id:
+          type: string
+        potential_match_version:
+          type: integer
+        person_updates:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonUpdate"
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonRecordComment"
+      required:
+        - person_updates
+        - potential_match_id
+        - potential_match_version
+    DataSource:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+    ExportPersonRecordsRequest:
+      type: object
+      description: Mixin for validating S3 URIs.
+      properties:
+        s3_uri:
+          type: string
+      required:
+        - s3_uri
+    GetDataSourcesResponse:
+      type: object
+      properties:
+        data_sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataSource"
+      required:
+        - data_sources
+    GetPersonResponse:
+      type: object
+      properties:
+        person:
+          $ref: "#/components/schemas/PersonDetail"
+      required:
+        - person
+    GetPersonsResponse:
+      type: object
+      properties:
+        persons:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonSummary"
+      required:
+        - persons
+    GetPotentialMatchResponse:
+      type: object
+      properties:
+        potential_match:
+          $ref: "#/components/schemas/PotentialMatchDetail"
+      required:
+        - potential_match
+    GetPotentialMatchesResponse:
+      type: object
+      properties:
+        potential_matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/PotentialMatchSummary"
+      required:
+        - potential_matches
+    GetUsersResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSummary"
+      required:
+        - users
+    ImportPersonRecordsRequest:
+      type: object
+      description: Mixin for validating S3 URIs.
+      properties:
+        s3_uri:
+          type: string
+        config_id:
+          type: string
+      required:
+        - config_id
+        - s3_uri
+    ImportPersonRecordsResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+      required:
+        - job_id
+    NullEnum:
+      enum:
+        - null
+    PersonDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        created:
+          type: string
+          format: date-time
+        version:
+          type: integer
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonRecord"
+      required:
+        - created
+        - id
+        - records
+        - version
+    PersonRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        person_id:
+          type: string
+        created:
+          type: string
+          format: date-time
+        person_updated:
+          type: string
+          format: date-time
+        matched_or_reviewed:
+          type: boolean
+        data_source:
+          type: string
+        source_person_id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        sex:
+          type: string
+        race:
+          type: string
+        birth_date:
+          type: string
+        death_date:
+          type: string
+        social_security_number:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip_code:
+          type: string
+        county:
+          type: string
+        phone:
+          type: string
+      required:
+        - address
+        - birth_date
+        - city
+        - county
+        - created
+        - data_source
+        - death_date
+        - first_name
+        - id
+        - last_name
+        - matched_or_reviewed
+        - person_id
+        - person_updated
+        - phone
+        - race
+        - sex
+        - social_security_number
+        - source_person_id
+        - state
+        - zip_code
+    PersonRecordComment:
+      type: object
+      properties:
+        person_record_id:
+          type: string
+        comment:
+          type: string
+      required:
+        - comment
+        - person_record_id
+    PersonSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        data_sources:
+          type: array
+          items:
+            type: string
+      required:
+        - data_sources
+        - first_name
+        - id
+        - last_name
+    PersonUpdate:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+        new_person_record_ids:
+          type: array
+          items:
+            type: string
+      required:
+        - new_person_record_ids
+    PotentialMatchDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        data_sources:
+          type: array
+          items:
+            type: string
+        max_match_probability:
+          type: number
+          format: double
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictionResult"
+        persons:
+          type: array
+          items:
+            $ref: "#/components/schemas/PersonDetail"
+      required:
+        - data_sources
+        - first_name
+        - id
+        - last_name
+        - max_match_probability
+        - persons
+        - results
+    PotentialMatchSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        data_sources:
+          type: array
+          items:
+            type: string
+        max_match_probability:
+          type: number
+          format: double
+      required:
+        - data_sources
+        - first_name
+        - id
+        - last_name
+        - max_match_probability
+    PredictionResult:
+      type: object
+      properties:
+        id:
+          type: string
+        created:
+          type: string
+          format: date-time
+        match_probability:
+          type: number
+          format: double
+        person_record_l_id:
+          type: string
+        person_record_r_id:
+          type: string
+      required:
+        - created
+        - id
+        - match_probability
+        - person_record_l_id
+        - person_record_r_id
+    RoleEnum:
+      enum:
+        - admin
+        - member
+      type: string
+      description: |-
+        * `admin` - admin
+        * `member` - member
+    SplinkSettings:
+      type: object
+      properties:
+        probability_two_random_records_match:
+          type: number
+          format: double
+          maximum: 1
+          minimum: 0
+        em_convergence:
+          type: number
+          format: double
+          minimum: 0
+        max_iterations:
+          type: integer
+          minimum: 1
+        blocking_rules_to_generate_predictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlockingRule"
+        comparisons:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comparison"
+      required:
+        - blocking_rules_to_generate_predictions
+        - comparisons
+        - em_convergence
+        - max_iterations
+        - probability_two_random_records_match
+    UpdateUserRoleRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+        role:
+          nullable: true
+          oneOf:
+            - $ref: "#/components/schemas/RoleEnum"
+            - $ref: "#/components/schemas/NullEnum"
+      required:
+        - role
+        - user_id
+    UpdateUserRoleResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UpdatedUser"
+      required:
+        - user
+    UpdatedUser:
+      type: object
+      properties:
+        id:
+          type: string
+      required:
+        - id
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+      required:
+        - email
+        - id
+        - role
