@@ -110,4 +110,4 @@ When deploying to AWS, you can take advantaged of AWS Secrets Manager for storin
 
 Here is one possible example of how you can deploy Tuva EMPI in AWS:
 
-![Tuva EMPI Example AWS Deployment Architecture SVG](/img/empi-aws-example-architecture.drawio.svg)
+![Tuva EMPI Example AWS Deployment Architecture SVG](/img/empi-aws-example-architecture.svg)
