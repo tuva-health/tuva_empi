@@ -58,7 +58,7 @@ configure:
 	@env DEST_CONFIG_FILE="$(TUVA_EMPI_CONFIG_FILE)" python configure.py
 
 run:
-	tuva-empi-api
+	./tuva-empi-backend api
 
 matching-service:
-	tuva-empi-matching-service
+	./tuva-empi-backend matching-service
