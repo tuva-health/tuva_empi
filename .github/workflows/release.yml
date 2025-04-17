@@ -1,0 +1,101 @@
+name: Release
+on:
+  push:
+    branches:
+      - 'release/*'
+    paths:
+      - 'VERSION'
+
+jobs:
+  process-release:
+    name: Process Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version info
+        id: version
+        run: |
+          # Make script executable
+          chmod +x ./scripts/version.sh
+
+          # Get current version
+          VERSION=$(./scripts/version.sh get)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          # Check if dev version
+          WAS_DEV=$(git show HEAD^:VERSION | ./scripts/version.sh is-dev)
+          echo "was_dev=${WAS_DEV}" >> $GITHUB_OUTPUT
+
+      - name: Create Release Tag
+        run: |
+          git tag v${{ steps.version.outputs.version }}
+          git push origin v${{ steps.version.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      - name: Create Version Bump PR
+        if: steps.version.outputs.was_dev == 'true'
+        run: |
+          # Get next version
+          NEXT_VERSION=$(./scripts/version.sh bump-dev)
+
+          # Create branch for version bump
+          git checkout main
+          git checkout -b bump-version-${NEXT_VERSION}
+
+          # Update VERSION file
+          echo "${NEXT_VERSION}" > VERSION
+
+          # Commit and push
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add VERSION
+          git commit -m "Bump version to ${NEXT_VERSION}"
+          git push origin bump-version-${NEXT_VERSION}
+
+          # Create PR
+          gh pr create \
+            --title "Bump version to ${NEXT_VERSION}" \
+            --body "Automated version bump after release" \
+            --base main \
+            --head bump-version-${NEXT_VERSION}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-backend:
+    needs: process-release
+    uses: ./.github/workflows/build-backend.yml
+    with:
+      push_image: true
+      image_name: ghcr.io/tuva-health/tuva-empi-backend
+      image_tag: v${{ needs.process-release.outputs.version }}
+    secrets:
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-frontend:
+    needs: process-release
+    uses: ./.github/workflows/build-frontend.yml
+    with:
+      push_image: true
+      image_name: ghcr.io/tuva-health/tuva-empi-frontend
+      image_tag: v${{ needs.process-release.outputs.version }}
+    secrets:
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
