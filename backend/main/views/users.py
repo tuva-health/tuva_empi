@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
@@ -14,19 +15,21 @@ class GetUsersRequest(Serializer):
     pass
 
 
-class UpdateUserRoleRequest(Serializer):
-    user_id = serializers.CharField()
-    role = serializers.ChoiceField(
-        choices=[role.value for role in UserRole], allow_null=True
-    )
-
-    def validate_user_id(self, value: str) -> str:
-        if value.startswith(get_prefix("User") + "_") and is_object_id(value, "int"):
-            return value
-        else:
-            raise serializers.ValidationError("Invalid User ID")
+class UserSummarySerializer(Serializer):
+    id = serializers.CharField()
+    email = serializers.EmailField()
+    role = serializers.CharField()
 
 
+class GetUsersResponse(Serializer):
+    users = UserSummarySerializer(many=True)
+
+
+@extend_schema(
+    summary="Retrieve users",
+    request=GetUsersRequest,
+    responses={200: GetUsersResponse},
+)
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def get_users(request: Request) -> Response:
@@ -53,6 +56,32 @@ def get_users(request: Request) -> Response:
     return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class UpdateUserRoleRequest(Serializer):
+    user_id = serializers.CharField()
+    role = serializers.ChoiceField(
+        choices=[role.value for role in UserRole], allow_null=True
+    )
+
+    def validate_user_id(self, value: str) -> str:
+        if value.startswith(get_prefix("User") + "_") and is_object_id(value, "int"):
+            return value
+        else:
+            raise serializers.ValidationError("Invalid User ID")
+
+
+class UpdatedUserSerializer(Serializer):
+    id = serializers.CharField()
+
+
+class UpdateUserRoleResponse(Serializer):
+    user = UpdatedUserSerializer()
+
+
+@extend_schema(
+    summary="Update user role",
+    request=UpdateUserRoleRequest,
+    responses={200: UpdateUserRoleResponse},
+)
 @api_view(["POST"])
 @permission_classes([IsAdmin])
 def update_user(request: Request, id: int) -> Response:

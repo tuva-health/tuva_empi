@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -15,9 +16,18 @@ class CreateConfigRequest(Serializer):
     auto_match_threshold = serializers.FloatField(min_value=0, max_value=1)
 
 
+class CreateConfigResponse(Serializer):
+    config_id = serializers.CharField()
+
+
+@extend_schema(
+    summary="Create config",
+    request=CreateConfigRequest,
+    responses={200: CreateConfigResponse},
+)
 @api_view(["POST"])
 def create_config(request: Request) -> Response:
-    """Create Config object."""
+    """Creates a Config object."""
     serializer = CreateConfigRequest(data=request.data)
 
     if serializer.is_valid(raise_exception=True):
