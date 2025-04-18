@@ -1,24 +1,24 @@
 import logging
 import signal
 import sys
+import threading
 import time
 from types import FrameType
-from typing import Optional, cast
+from typing import Optional
 
 import psycopg.errors
 from django.db import OperationalError, connection, transaction
-from django.db.backends.utils import CursorWrapper
 from django.forms.models import model_to_dict
 from django.utils import timezone
-from psycopg import sql
 
 from main.models import (
-    MATCHING_SERVICE_LOCK_ID,
+    DbLockId,
     Job,
     JobStatus,
     PersonRecordStaging,
 )
 from main.services.matching.process_job_runner import ProcessJobRunner
+from main.util.sql import obtain_advisory_lock
 
 
 class MatchingService:
@@ -29,7 +29,8 @@ class MatchingService:
         self.logger = logging.getLogger(__name__)
         self.cancel = False
 
-        signal.signal(signal.SIGINT, self.handle_sigint)
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self.handle_sigint)
 
     def handle_sigint(self, _: int, __: Optional[FrameType]) -> None:
         if not self.cancel:
@@ -40,25 +41,6 @@ class MatchingService:
         else:
             self.logger.info("Second Ctrl+C received, stopping immediately")
             sys.exit(1)
-
-    def try_advisory_lock(self, cursor: CursorWrapper) -> bool:
-        advisory_lock_sql = sql.SQL(
-            """
-                select pg_try_advisory_xact_lock(%(lock_id)s)
-            """
-        )
-        cursor.execute(
-            advisory_lock_sql,
-            {"lock_id": MATCHING_SERVICE_LOCK_ID},
-        )
-
-        if cursor.rowcount > 0:
-            row = cursor.fetchone()
-            result = cast(bool, row[0])
-
-            return result
-        else:
-            return False
 
     def get_next_job(self) -> Optional[Job]:
         return (
@@ -75,10 +57,11 @@ class MatchingService:
         with transaction.atomic(durable=True):
             self.logger.info("Retrieving next job")
 
+            # Obtain (wait for) lock to prevent multiple MatchingServices from running jobs at the same time.
+            # Jobs should be run sequentially.
             with connection.cursor() as cursor:
-                if not self.try_advisory_lock(cursor):
-                    self.logger.error("Another match worker is already running")
-                    self.stop()
+                lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_service)
+                assert lock_acquired
 
             # Throws if cannot lock latest job
             job = self.get_next_job()

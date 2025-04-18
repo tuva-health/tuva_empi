@@ -1,10 +1,15 @@
 import csv
 import io
+import logging
 from typing import Any, Collection, Iterable, Mapping, Optional, cast
 
 import pandas as pd
 from django.db.backends.utils import CursorWrapper
 from psycopg import sql
+
+from main.models import DbLockId
+
+logger = logging.getLogger(__name__)
 
 
 def create_temp_table(
@@ -164,3 +169,75 @@ def extract_df(
         return pd.read_csv(
             buffer, dtype=dtype, na_filter=na_filter, parse_dates=parse_dates
         )
+
+
+def obtain_advisory_lock(cursor: CursorWrapper, lock_id: DbLockId) -> bool:
+    pid = cursor.connection.info.backend_pid
+    logger.info(
+        f"[pg_pid={pid}] Waiting for exclusive lock of {lock_id.name} ({lock_id.value})"
+    )
+
+    # Block until we obtain lock
+    lock_sql = sql.SQL(
+        """
+            select pg_advisory_xact_lock(%(lock_id)s)
+        """
+    )
+    cursor.execute(lock_sql, {"lock_id": lock_id.value})
+    rows = cursor.fetchall()
+
+    # defensive check: pg_advisory_xact_lock should always return void
+    if len(rows) == 1:
+        logger.info(
+            f"[pg_pid={pid}] Acquired exclusive lock of {lock_id.name} ({lock_id.value})"
+        )
+        return True
+    else:
+        raise Exception(
+            f"[pg_pid={pid}] Failed attempting to obtain {lock_id.name} ({lock_id.value})"
+        )
+
+
+def try_advisory_lock(
+    cursor: CursorWrapper, lock_id: DbLockId, shared: bool = False
+) -> bool:
+    pid = cursor.connection.info.backend_pid
+    logger.info(
+        f"[pg_pid={pid}] Trying (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+    )
+
+    if shared:
+        lock_sql = sql.SQL(
+            """
+                select pg_try_advisory_xact_lock_shared(%(lock_id)s)
+            """
+        )
+    else:
+        lock_sql = sql.SQL(
+            """
+                select pg_try_advisory_xact_lock(%(lock_id)s)
+            """
+        )
+
+    cursor.execute(lock_sql, {"lock_id": lock_id.value})
+    rows = cursor.fetchall()
+
+    # defensive check: pg_try_advisory_xact_lock should always return a boolean
+    if len(rows) == 1:
+        result = cast(bool, rows[0][0])
+
+        if result:
+            logger.info(
+                f"[pg_pid={pid}] Acquired (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+            )
+        else:
+            logger.info(
+                f"[pg_pid={pid}] Failed to acquire (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+            )
+
+        return result
+    else:
+        logger.info(
+            f"[pg_pid={pid}] Failed to acquire (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+        )
+        return False

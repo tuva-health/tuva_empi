@@ -15,9 +15,9 @@ from psycopg import sql
 from psycopg.errors import DataError, IntegrityError
 
 from main.models import (
-    MATCH_UPDATE_LOCK_ID,
     TIMESTAMP_FORMAT,
     Config,
+    DbLockId,
     Job,
     JobStatus,
     MatchEvent,
@@ -34,7 +34,7 @@ from main.models import (
     User,
 )
 from main.util.s3 import S3Client
-from main.util.sql import create_temp_table_like, drop_column
+from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
 
 
 class PartialConfigDict(TypedDict):
@@ -559,24 +559,13 @@ class EMPIService:
         can tell if a Job is holding this lock and return early. Multiple users can share the lock
         because manual-matches are quick and we don't mind if users wait less than a second.
         """
-        lock_sql = sql.SQL(
-            """
-                select pg_try_advisory_xact_lock_shared(%(lock_id)s)
-            """
-        )
-        cursor.execute(lock_sql, {"lock_id": MATCH_UPDATE_LOCK_ID})
+        result = try_advisory_lock(cursor, DbLockId.match_update, shared=True)
 
-        if cursor.rowcount > 0:
-            row = cursor.fetchone()
-            result = cast(bool, row[0])
-
-            if not result:
-                raise ConcurrentMatchUpdates(
-                    "A matching job is currently updating matches. Please wait until the job finishes to perform a match."
-                )
-            return result
-        else:
-            raise Exception("Failed attempting to obtain MATCH_UPDATE_LOCK")
+        if not result:
+            raise ConcurrentMatchUpdates(
+                "A matching job is currently updating matches. Please wait until the job finishes to perform a match."
+            )
+        return result
 
     def _get_match_group_records_for_update(
         self, cursor: CursorWrapper, match_group: MatchGroup
@@ -1044,6 +1033,9 @@ class EMPIService:
                 lock_acquired = self._obtain_shared_match_update_lock(cursor)
                 assert lock_acquired
 
+                self.logger.info(
+                    f"Selecting MatchGroup {potential_match_id} for update"
+                )
                 match_group = (
                     MatchGroup.objects.select_for_update()
                     .filter(id=potential_match_id)
@@ -1057,7 +1049,9 @@ class EMPIService:
                     raise MatchGroup.DoesNotExist("Potential match has been replaced")
 
                 if match_group.matched:
-                    raise InvalidPotentialMatch("Potential has already been matched")
+                    raise InvalidPotentialMatch(
+                        "Potential match has already been matched"
+                    )
 
                 if match_group.version != potential_match_version:
                     raise InvalidPotentialMatch("Potential match version is outdated")

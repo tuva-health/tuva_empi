@@ -1,11 +1,13 @@
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from datetime import timezone as tz
 from typing import Any, Iterator, Mapping, Optional, cast
 from unittest.mock import patch
 
+from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone as django_tz
 
@@ -34,6 +36,7 @@ from main.services.empi.empi_service import (
     InvalidPotentialMatch,
     PersonDict,
     PersonRecordDict,
+    PersonRecordIdsWithUUIDPartialDict,
     PersonSummaryDict,
     PersonUpdateDict,
     PotentialMatchDict,
@@ -3236,7 +3239,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.match_group1.save()
 
         with self.assertRaisesMessage(
-            InvalidPotentialMatch, "Potential has already been matched"
+            InvalidPotentialMatch, "Potential match has already been matched"
         ):
             self.empi.match_person_records(match["id"], match["version"], [], self.user)
 
@@ -3386,6 +3389,363 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             self.empi.match_person_records(
                 match["id"], match["version"], person_updates, self.user
             )
+
+
+class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
+    """Tests concurrency properties of match_person_records."""
+
+    now: datetime
+    config: Config
+    job: Job
+    person1: Person
+    person2: Person
+    person_record1: PersonRecord
+    person_record2: PersonRecord
+    match_group1: MatchGroup
+    match_group2: MatchGroup
+    result1: SplinkResult
+    result2: SplinkResult
+    user: User
+
+    def setUp(self) -> None:
+        self.now = django_tz.now()
+        self.config = EMPIService().create_config(
+            {
+                "splink_settings": {},
+                "potential_match_threshold": 0.001,
+                "auto_match_threshold": 0.0013,
+            }
+        )
+        self.job = EMPIService().create_job(
+            "s3://tuva-health-example/test", self.config.id
+        )
+
+        common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "sha256": b"test-sha256",
+            "source_person_id": "a1",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person3 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person4 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        self.person_record1 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person1.id,
+            data_source="ds1",
+            first_name="John",
+            last_name="Doe",
+        )
+        self.person_record2 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person2.id,
+            data_source="ds2",
+            first_name="Jane",
+            last_name="Smith",
+        )
+        self.person_record3 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person3.id,
+            data_source="ds3",
+            first_name="Paul",
+            last_name="Lap",
+        )
+        self.person_record4 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person4.id,
+            data_source="ds4",
+            first_name="Linda",
+            last_name="Love",
+        )
+
+        self.match_group1 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result1 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group1.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record1.id,
+            person_record_r_id=self.person_record2.id,
+            data={},
+        )
+
+        self.match_group2 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result2 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group2.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record3.id,
+            person_record_r_id=self.person_record4.id,
+            data={},
+        )
+        self.user = User.objects.create()
+
+    def test_concurrent_match_same_match_group(self) -> None:
+        """Tests that if match_person_records holds the MatchGroup row lock, then another instance of match_person_records (with the same MatchGroup) waits."""
+        delay1 = threading.Event()
+        delay2 = threading.Event()
+
+        t1_exit: Optional[float] = None
+        t2_entry: Optional[float] = None
+
+        # validate_update_records is called by match_person_records after the lock is obtained.
+        # We mock the first instance so that we can ensure it's run first and also to introduce
+        # an artificial delay.
+        def mock_validate_update_records_1(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t1_exit
+
+            # Signal that the MatchGroup row lock should be held at this point
+            delay1.set()
+            # Wait for EMPIService 2 to try to obtain the lock
+            delay2.wait()
+
+            t1_exit = time.time()
+
+            # Add delay so that we can verify the lock is being held
+            time.sleep(3)
+
+            return True
+
+        # We mock the second instance so that we can verify it's run second.
+        def mock_validate_update_records_2(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t2_entry
+
+            t2_entry = time.time()
+
+            return True
+
+        # Run match_person_records and close DB connection
+        def match_person_records_1() -> None:
+            try:
+                EMPIService().match_person_records(
+                    self.match_group1.id, self.match_group1.version, [], self.user
+                )
+            finally:
+                connection.close()
+
+        # Run match_person_records and close DB connection
+        def match_person_records_2() -> None:
+            try:
+                with self.assertRaisesMessage(
+                    InvalidPotentialMatch, "Potential match has already been matched"
+                ):
+                    EMPIService().match_person_records(
+                        self.match_group1.id, self.match_group1.version, [], self.user
+                    )
+            finally:
+                connection.close()
+
+        with patch(
+            "main.services.empi.empi_service.EMPIService.validate_update_records",
+            new=mock_validate_update_records_1,
+        ):
+            t1 = threading.Thread(target=match_person_records_1)
+
+            # Start EMPIService 1
+            t1.start()
+
+            # Wait until EMPIService 1 obtains the lock
+            delay1.wait()
+
+            with patch(
+                "main.services.empi.empi_service.EMPIService.validate_update_records",
+                new=mock_validate_update_records_2,
+            ):
+                t2 = threading.Thread(target=match_person_records_2)
+
+                # Start EMPIService 2
+                t2.start()
+
+                # Add delay to ensure EMPIService 2 has reached the lock
+                time.sleep(2)
+
+                # Signal to allow EMPIService 1 to finish and EMPIService 2 to start
+                delay2.set()
+
+                t1.join()
+                t2.join()
+
+        self.assertIsNotNone(t1_exit)
+        self.assertIsNone(t2_entry)
+
+        # Only EMPIService 1 should have succeeded
+        self.assertEqual(
+            MatchEvent.objects.filter(type=MatchEventType.manual_match).count(), 1
+        )
+
+    def test_concurrent_match_different_match_groups(self) -> None:
+        """Tests that if match_person_records holds the MatchGroup row lock, then another instance of match_person_records (with the a different MatchGroup) can proceed concurrently."""
+        delay1 = threading.Event()
+        delay2 = threading.Event()
+
+        t1_exit: Optional[float] = None
+        t2_entry: Optional[float] = None
+
+        # validate_update_records is called by match_person_records after the lock is obtained.
+        # We mock the first instance so that we can ensure it's run first and also to introduce
+        # an artificial delay.
+        def mock_validate_update_records_1(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t1_exit
+
+            # Signal that the MatchGroup row lock should be held at this point
+            delay1.set()
+            # Wait for EMPIService 2 to try to obtain the lock
+            delay2.wait()
+
+            t1_exit = time.time()
+
+            # Add delay so that we can verify the lock is being held
+            time.sleep(3)
+
+            return True
+
+        # We mock the second instance so that we can verify it's run second.
+        def mock_validate_update_records_2(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t2_entry
+
+            t2_entry = time.time()
+
+            return True
+
+        # Run match_person_records and close DB connection
+        def match_person_records_1() -> None:
+            try:
+                EMPIService().match_person_records(
+                    self.match_group1.id, self.match_group1.version, [], self.user
+                )
+            finally:
+                connection.close()
+
+        # Run match_person_records and close DB connection
+        def match_person_records_2() -> None:
+            try:
+                EMPIService().match_person_records(
+                    self.match_group2.id, self.match_group2.version, [], self.user
+                )
+            finally:
+                connection.close()
+
+        with patch(
+            "main.services.empi.empi_service.EMPIService.validate_update_records",
+            new=mock_validate_update_records_1,
+        ):
+            t1 = threading.Thread(target=match_person_records_1)
+
+            # Start EMPIService 1
+            t1.start()
+
+            # Wait until EMPIService 1 obtains the lock
+            delay1.wait()
+
+            with patch(
+                "main.services.empi.empi_service.EMPIService.validate_update_records",
+                new=mock_validate_update_records_2,
+            ):
+                t2 = threading.Thread(target=match_person_records_2)
+
+                # Start EMPIService 2
+                t2.start()
+
+                # Add delay to ensure EMPIService 2 has reached the lock
+                time.sleep(2)
+
+                # Signal to allow EMPIService 1 to finish and EMPIService 2 to start
+                delay2.set()
+
+                t1.join()
+                t2.join()
+
+        self.assertIsNotNone(t1_exit)
+        self.assertIsNotNone(t2_entry)
+
+        # EMPIService 2 should have started around the same time as EMPIService 1
+        self.assertLess(cast(float, t2_entry) - cast(float, t1_exit), 1)
+
+        # Both instances should have succeeded
+        self.assertEqual(
+            MatchEvent.objects.filter(type=MatchEventType.manual_match).count(), 2
+        )
 
 
 class PersonsTestCase(TransactionTestCase):
