@@ -1,6 +1,7 @@
 import logging
 import signal
 import sys
+import threading
 import time
 from types import FrameType
 from typing import Optional
@@ -28,7 +29,8 @@ class MatchingService:
         self.logger = logging.getLogger(__name__)
         self.cancel = False
 
-        signal.signal(signal.SIGINT, self.handle_sigint)
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self.handle_sigint)
 
     def handle_sigint(self, _: int, __: Optional[FrameType]) -> None:
         if not self.cancel:
