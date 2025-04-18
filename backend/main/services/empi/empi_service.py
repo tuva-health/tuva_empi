@@ -407,15 +407,17 @@ class EMPIService:
                 search_conditions=sql.SQL(" ").join(search_conditions["conditions"]),
             )
             cursor.execute(get_potential_matches_sql, search_conditions["params"])
+            rows = cursor.fetchall()
+            row_description = cursor.description
 
-            self.logger.info(f"Retrieved {cursor.rowcount} potential matches")
+            self.logger.info(f"Retrieved {len(rows)} potential matches")
 
-            if cursor.rowcount > 0:
-                column_names = [c.name for c in cursor.description]
+            if len(rows) > 0:
+                column_names = [c.name for c in row_description]
 
                 return [
                     cast(PotentialMatchSummaryDict, dict(zip(column_names, row)))
-                    for row in cursor.fetchall()
+                    for row in rows
                 ]
             else:
                 return []
@@ -490,8 +492,10 @@ class EMPIService:
             get_persons_sql,
             {"match_group_id": match_group_id, "timestamp_format": TIMESTAMP_FORMAT},
         )
+        rows = cursor.fetchall()
+        row_description = cursor.description
 
-        self.logger.info(f"Retrieved {cursor.rowcount} potential match persons")
+        self.logger.info(f"Retrieved {len(rows)} potential match persons")
 
         def row_to_person(row_dict: Mapping[str, Any]) -> PersonDict:
             records = [json.loads(record) for record in row_dict["records"]]
@@ -503,15 +507,11 @@ class EMPIService:
                 records=records,
             )
 
-        persons = []
-
-        if cursor.rowcount > 0:
-            column_names = [c.name for c in cursor.description]
-            persons = [
-                row_to_person(dict(zip(column_names, row))) for row in cursor.fetchall()
-            ]
-
-        return persons
+        if len(rows) > 0:
+            column_names = [c.name for c in row_description]
+            return [row_to_person(dict(zip(column_names, row))) for row in rows]
+        else:
+            return []
 
     def get_potential_match(self, id: int) -> PotentialMatchDict:
         self.logger.info(f"Retrieving potential match with id {id}")
@@ -618,14 +618,16 @@ class EMPIService:
             person_table=sql.Identifier(person_table),
         )
         cursor.execute(get_match_group_records_sql, {"match_group_id": match_group.id})
+        rows = cursor.fetchall()
+        row_description = cursor.description
 
-        self.logger.info(f"Retrieved {cursor.rowcount} match group person records")
+        self.logger.info(f"Retrieved {len(rows)} match group person records")
 
-        if cursor.rowcount > 0:
-            column_names = [c.name for c in cursor.description]
+        if len(rows) > 0:
+            column_names = [c.name for c in row_description]
             return [
                 cast(PersonRecordIdsWithUUIDPartialDict, dict(zip(column_names, row)))
-                for row in cursor.fetchall()
+                for row in rows
             ]
         else:
             raise Exception("Potential match records do not exist")
@@ -1204,15 +1206,17 @@ class EMPIService:
                 search_conditions=sql.SQL(" ").join(search_conditions["conditions"]),
             )
             cursor.execute(get_persons_sql, search_conditions["params"])
+            rows = cursor.fetchall()
+            row_description = cursor.description
 
-            self.logger.info(f"Retrieved {cursor.rowcount} persons")
+            self.logger.info(f"Retrieved {len(rows)} persons")
 
-            if cursor.rowcount > 0:
-                column_names = [c.name for c in cursor.description]
+            if len(rows) > 0:
+                column_names = [c.name for c in row_description]
 
                 return [
                     cast(PersonSummaryDict, dict(zip(column_names, row)))
-                    for row in cursor.fetchall()
+                    for row in rows
                 ]
             else:
                 return []
@@ -1267,11 +1271,13 @@ class EMPIService:
                 get_persons_sql,
                 {"uuid": uuid, "timestamp_format": TIMESTAMP_FORMAT},
             )
+            rows = cursor.fetchall()
+            row_description = cursor.description
 
-            if cursor.rowcount == 0:
+            if len(rows) == 0:
                 raise Person.DoesNotExist()
 
-            if cursor.rowcount > 1:
+            if len(rows) > 1:
                 raise Person.MultipleObjectsReturned()
 
             self.logger.info("Retrieved person")
@@ -1288,14 +1294,12 @@ class EMPIService:
 
             persons = []
 
-            if cursor.rowcount > 0:
-                column_names = [c.name for c in cursor.description]
-                persons = [
-                    row_to_person(dict(zip(column_names, row)))
-                    for row in cursor.fetchall()
-                ]
-
-            return persons[0]
+            if len(rows) > 0:
+                column_names = [c.name for c in row_description]
+                persons = [row_to_person(dict(zip(column_names, row))) for row in rows]
+                return persons[0]
+            else:
+                raise Person.DoesNotExist()
 
     def export_person_records(self, s3_uri: str) -> None:
         """Export person records to S3 in CSV format.
@@ -1334,22 +1338,24 @@ class EMPIService:
             )
 
             cursor.execute(person_records_sql)
+            rows = cursor.fetchall()
+            row_description = cursor.description
 
-            self.logger.info(f"Retrieved {cursor.rowcount} person records")
+            self.logger.info(f"Retrieved {len(rows)} person records")
 
             # Create CSV content in memory
             output = io.StringIO(newline="")
             writer = csv.writer(output, lineterminator="\n")
 
             # Write headers
-            column_names = [c.name for c in cursor.description]
+            column_names = [c.name for c in row_description]
             writer.writerow(column_names)
 
             # Write data
-            for row in cursor.fetchall():
+            for row in rows:
                 writer.writerow(row)
 
             # Upload to S3
             self.s3.put_object(s3_uri, output.getvalue().encode("utf-8"))
 
-            self.logger.info(f"Uploaded {cursor.rowcount} person records to {s3_uri}")
+            self.logger.info(f"Uploaded {len(rows)} person records to {s3_uri}")

@@ -164,8 +164,9 @@ class Matcher:
             person_record_stg_table=sql.Identifier(person_record_stg_table),
         )
         cursor.execute(update_sql, {"job_id": job.id})
+        row_count = cursor.rowcount
         self.logger.info(
-            f"Added sha256 sum to {cursor.rowcount} staging records  with job ID {job.id}"
+            f"Added sha256 sum to {row_count} staging records  with job ID {job.id}"
         )
 
     def dedupe_staging(self, cursor: CursorWrapper, job: Job) -> int:
@@ -197,8 +198,9 @@ class Matcher:
             person_record_table=sql.Identifier(person_record_table),
         )
         cursor.execute(deduplicate_staging_sql, {"job_id": job.id})
+        row_count = cursor.rowcount
         self.logger.info(
-            f"Deleted {cursor.rowcount} duplicate staging records with job ID {job.id}"
+            f"Deleted {row_count} duplicate staging records with job ID {job.id}"
         )
 
         select_staging_count_sql = sql.SQL(
@@ -242,8 +244,9 @@ class Matcher:
             person_record_stg_table=sql.Identifier(person_record_stg_table),
         )
         cursor.execute(update_sql, {"job_id": job.id})
+        row_count = cursor.rowcount
         self.logger.info(
-            f"Added row_number to {cursor.rowcount} staging records with job ID {job.id}"
+            f"Added row_number to {row_count} staging records with job ID {job.id}"
         )
 
     def create_match_event(
@@ -267,19 +270,18 @@ class Matcher:
             create_match_event_sql,
             {"job_id": job.id, "type": type.value},
         )
+        rows = cursor.fetchall()
+        row_description = cursor.description
 
-        match_events_created_count = cursor.rowcount
-
-        if match_events_created_count != 1:
+        if len(rows) != 1:
             raise Exception(
-                f"Failed to create '{type.value}' Match Event."
-                f" Created: {match_events_created_count}"
+                f"Failed to create '{type.value}' Match Event." f" Created: {len(rows)}"
             )
 
         # FIXME: Figure out how to use psycopg row_factory with Django cursor
         # e.g. cursor.connection.row_factory
-        column_names = [c.name for c in cursor.description]
-        match_event = MatchEvent(**dict(zip(column_names, cursor.fetchone())))
+        column_names = [c.name for c in row_description]
+        match_event = MatchEvent(**dict(zip(column_names, rows[0])))
 
         self.logger.info(f"Created '{type.value}' Match Event with ID {match_event.id}")
 
@@ -346,8 +348,9 @@ class Matcher:
                 "record_count": 1,
             },
         )
+        row_count = cursor.rowcount
         self.logger.info(
-            f"Created {cursor.rowcount} Persons for staging records with job ID {job.id}"
+            f"Created {row_count} Persons for staging records with job ID {job.id}"
         )
 
     def load_person_records_with_persons(
@@ -423,12 +426,13 @@ class Matcher:
             insert_person_records_sql,
             {"job_id": job.id, "match_event_created": match_event.created},
         )
+        row_count = cursor.rowcount
         self.logger.info(
-            f"Loaded {cursor.rowcount} staging records with job ID {job.id} into PersonRecord table"
+            f"Loaded {row_count} staging records with job ID {job.id} into PersonRecord table"
         )
 
         # NOTE: Pyright picks up the correct signature here, but mypy doesn't
-        return cast(int, cursor.rowcount)
+        return cast(int, row_count)
 
     def create_new_id_person_actions(
         self, cursor: CursorWrapper, job: Job, match_event: MatchEvent
@@ -469,8 +473,9 @@ class Matcher:
                 "match_event_type": PersonActionType.add_record.value,
             },
         )
+        row_count = cursor.rowcount
         self.logger.info(
-            f"Loaded {cursor.rowcount} PersonActions for '{match_event.type}' event with ID {match_event.id}"
+            f"Loaded {row_count} PersonActions for '{match_event.type}' event with ID {match_event.id}"
             f" (related to job {job.id}) into PersonAction table"
         )
 
@@ -767,8 +772,9 @@ class Matcher:
             """
         )
         cursor.execute(lock_sql, {"lock_id": MATCH_UPDATE_LOCK_ID})
+        row_count = cursor.rowcount
 
-        if cursor.rowcount > 0:
+        if row_count > 0:
             # pg_advisory_xact_lock returns void
             self.logger.info(
                 f"Acquired exclusing lock of MATCH_UPDATES_LOCK_ID ({MATCH_UPDATE_LOCK_ID})"
@@ -849,9 +855,8 @@ class Matcher:
             match_group_table=sql.Identifier(match_group_table),
         )
         cursor.execute(soft_delete_match_groups_sql, {"job_id": job.id})
-        self.logger.info(
-            f"Soft-deleted {cursor.rowcount} existing, unmatched Match Groups"
-        )
+        row_count = cursor.rowcount
+        self.logger.info(f"Soft-deleted {row_count} existing, unmatched Match Groups")
 
         return current_result_df
 
@@ -1031,11 +1036,12 @@ class Matcher:
             match_group_temp_table=sql.Identifier(match_group_temp_table),
         )
         cursor.execute(insert_results_sql, {"match_event_created": match_event.created})
+        row_count = cursor.rowcount
 
-        if cursor.rowcount != len(match_group_df):
+        if row_count != len(match_group_df):
             raise Exception("Failed to load Match Groups")
 
-        self.logger.info(f"Loaded {cursor.rowcount} Match Groups")
+        self.logger.info(f"Loaded {row_count} Match Groups")
 
         # Drop temporary table
 
@@ -1115,9 +1121,10 @@ class Matcher:
             load_add_result_actions_sql,
             {"job_id": job.id, "match_event_id": match_event.id},
         )
+        row_count = cursor.rowcount
 
         self.logger.info(
-            f"Created {cursor.rowcount} '{add_action}' MatchGroupActions for new results"
+            f"Created {row_count} '{add_action}' MatchGroupActions for new results"
             f" related to '{match_event.type}' event with ID {match_event.id} (related to job {job.id})"
         )
 
@@ -1155,14 +1162,15 @@ class Matcher:
             match_group_table=sql.Identifier(match_group_table),
         )
         cursor.execute(insert_new_results_sql, {"job_id": job.id})
+        row_count = cursor.rowcount
 
-        if cursor.rowcount != len(new_result_df):
+        if row_count != len(new_result_df):
             raise Exception(
                 "Failed to load new Splink Results."
-                f" Attempted to update {len(new_result_df)}, but only updated {cursor.rowcount}"
+                f" Attempted to update {len(new_result_df)}, but only updated {row_count}"
             )
 
-        self.logger.info(f"Loaded {cursor.rowcount} new Splink Results")
+        self.logger.info(f"Loaded {row_count} new Splink Results")
 
         # Create MatchGroupActions
 
@@ -1244,9 +1252,10 @@ class Matcher:
             load_add_result_actions_sql,
             {"job_id": job.id, "match_event_id": match_event.id},
         )
+        row_count = cursor.rowcount
 
         self.logger.info(
-            f"Created {cursor.rowcount} '{remove_action}' MatchGroupActions for current results"
+            f"Created {row_count} '{remove_action}' MatchGroupActions for current results"
             f" related to '{match_event.type}' event with ID {match_event.id} (related to job {job.id})"
         )
 
@@ -1285,9 +1294,10 @@ class Matcher:
             load_add_result_actions_sql,
             {"job_id": job.id, "match_event_id": match_event.id},
         )
+        row_count = cursor.rowcount
 
         self.logger.info(
-            f"Created {cursor.rowcount} '{add_action}' MatchGroupActions for current results"
+            f"Created {row_count} '{add_action}' MatchGroupActions for current results"
             f" related to '{match_event.type}' event with ID {match_event.id} (related to job {job.id})"
         )
 
@@ -1337,14 +1347,15 @@ class Matcher:
             match_group_table=sql.Identifier(match_group_table),
         )
         cursor.execute(update_current_results_sql, {"job_id": job.id})
+        row_count = cursor.rowcount
 
-        if cursor.rowcount != len(current_result_df):
+        if row_count != len(current_result_df):
             raise Exception(
                 "Failed to update current Splink Results."
-                f" Attempted to update {len(current_result_df)}, but only updated {cursor.rowcount}"
+                f" Attempted to update {len(current_result_df)}, but only updated {row_count}"
             )
 
-        self.logger.info(f"Updated {cursor.rowcount} current Splink Results")
+        self.logger.info(f"Updated {row_count} current Splink Results")
 
         # Add add_result MatchGroupAction for each current result
 
@@ -1385,9 +1396,10 @@ class Matcher:
             load_add_result_actions_sql,
             {"job_id": job.id, "match_event_id": match_event.id},
         )
+        row_count = cursor.rowcount
 
         self.logger.info(
-            f"Created {cursor.rowcount} '{MatchGroupActionType.match.value}' MatchGroupActions"
+            f"Created {row_count} '{MatchGroupActionType.match.value}' MatchGroupActions"
             f" for '{match_event.type}' event with ID {match_event.id} (related to job {job.id})"
         )
 
@@ -1583,18 +1595,15 @@ class Matcher:
         cursor.execute(
             update_person_records_sql, {"match_event_created": match_event.created}
         )
-
+        row_count = cursor.rowcount
         expected_person_actions_count = len(person_action_df)
-        actual_person_actions_count = cursor.rowcount
 
-        if expected_person_actions_count != actual_person_actions_count:
+        if expected_person_actions_count != row_count:
             raise Exception(
                 "Failed to update Person Records due to missing Person Record or Person ID mismatch."
-                f" Expected: {expected_person_actions_count} Actual: {actual_person_actions_count}"
+                f" Expected: {expected_person_actions_count} Actual: {row_count}"
             )
-        self.logger.info(
-            f"Updated Person IDs for {actual_person_actions_count} Person Records"
-        )
+        self.logger.info(f"Updated Person IDs for {row_count} Person Records")
 
         # Set matched_or_reviewed on all records related to Person IDs in MatchActions
 
@@ -1615,10 +1624,9 @@ class Matcher:
             set_person_records_matched_sql,
             {"match_event_created": match_event.created},
         )
+        row_count = cursor.rowcount
 
-        self.logger.info(
-            f"Set matched_or_reviewed for {cursor.rowcount} Person Records"
-        )
+        self.logger.info(f"Set matched_or_reviewed for {row_count} Person Records")
 
     def create_auto_match_person_actions(
         self,
@@ -1678,17 +1686,16 @@ class Matcher:
             add_action=sql.Literal(add_action),
         )
         cursor.execute(load_person_actions_sql, {"match_event_id": match_event.id})
-
+        row_count = cursor.rowcount
         expected_person_actions_count = len(person_action_df) * 2
-        actual_person_actions_count = cursor.rowcount
 
-        if expected_person_actions_count != actual_person_actions_count:
+        if expected_person_actions_count != row_count:
             raise Exception(
                 "Failed to create Match Actions."
-                f" Expected: {expected_person_actions_count} Actual: {actual_person_actions_count}"
+                f" Expected: {expected_person_actions_count} Actual: {row_count}"
             )
         self.logger.info(
-            f"Created {actual_person_actions_count} PersonActions for '{match_event.type}' event"
+            f"Created {row_count} PersonActions for '{match_event.type}' event"
             f" with ID {match_event.id} (related to job {job.id})"
         )
 

@@ -129,14 +129,16 @@ def load_df(
     with cursor.copy(stmt) as copy:
         copy.write(buffer.read())
 
-    if cursor.rowcount != len(df):
+    row_count = cursor.rowcount
+
+    if row_count != len(df):
         raise Exception(
-            f"Copied fewer rows than expected. Expected: {len(df)} Actual: {cursor.rowcount}"
+            f"Copied fewer rows than expected. Expected: {len(df)} Actual: {row_count}"
         )
 
     # pyright seems to pick this up correctly, but not mypy
     # error: Returning Any from function declared to return "int"  [no-any-return]
-    return cast(int, cursor.rowcount)
+    return cast(int, row_count)
 
 
 def extract_df(
