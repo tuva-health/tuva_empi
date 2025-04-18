@@ -3,6 +3,7 @@ import time
 from typing import Any, Optional, cast
 from unittest.mock import MagicMock, patch
 
+from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
@@ -100,9 +101,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
     }
 
     def setUp(self) -> None:
-        self.matching_service = MatchingService()
         self.config = Config.objects.create(**self.config_partial)
-
         self.job_partial["config_id"] = self.config.id
 
     def test_run_next_job_advisory_lock(self) -> None:
@@ -135,11 +134,17 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             t2_entry = time.time()
             return 0, None
 
+        def run_matching_service() -> None:
+            try:
+                MatchingService().run_next_job()
+            finally:
+                connection.close()
+
         with patch(
             "main.services.matching.matching_service.ProcessJobRunner.run_job",
             new=mock_run_job1,
         ):
-            t1 = threading.Thread(target=lambda: MatchingService().run_next_job())
+            t1 = threading.Thread(target=lambda: run_matching_service())
 
             # Start MatchingService 1
             t1.start()
@@ -151,13 +156,13 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
                 "main.services.matching.matching_service.ProcessJobRunner.run_job",
                 new=mock_run_job2,
             ):
-                t2 = threading.Thread(target=lambda: MatchingService().run_next_job())
+                t2 = threading.Thread(target=lambda: run_matching_service())
 
                 # Start MatchingService 2
                 t2.start()
 
                 # Simulate MatchingService 1 processing the job
-                time.sleep(2)
+                time.sleep(3)
 
                 # Signal to allow MatchingService 1 to finish and MatchingService 2 to start
                 delay2.set()
@@ -168,7 +173,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
         self.assertIsNotNone(t1_exit)
         self.assertIsNotNone(t2_entry)
 
-        # MatchingService 2 should only have called run_job after MatchingService1 released the lock
+        # MatchingService 2 should only have called run_job after MatchingService 1 released the lock
         self.assertGreater(cast(float, t2_entry), cast(float, t1_exit))
 
         # Both jobs should have succeeded

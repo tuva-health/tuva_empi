@@ -2,20 +2,27 @@ import copy
 import hashlib
 import json
 import logging
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Mapping, TypedDict, cast
+from typing import Any, Mapping, Optional, TypedDict, cast
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pandas.testing as pdt
 import psycopg
 from django.conf import settings
 from django.db import OperationalError, connection, transaction
+from django.db.backends.utils import CursorWrapper
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
 
 from main.models import (
+    Config,
+    Job,
+    JobStatus,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -2232,3 +2239,113 @@ class MatcherWithLockingTestCase(TransactionTestCase):
                         err_ctx.exception.__cause__, psycopg.errors.LockNotAvailable
                     )
                 )
+
+
+class MatcherConcurrencyTestCase(TransactionTestCase):
+    now = timezone.now()
+
+    config_partial = {
+        "created": now,
+        "splink_settings": {"test": 1},
+        "potential_match_threshold": 1.0,
+        "auto_match_threshold": 1.1,
+    }
+    config: Config
+
+    job_partial = {
+        "created": now,
+        "updated": now,
+        "s3_uri": "s3://tuva-empi-example/test",
+        "status": JobStatus.new,
+        "reason": None,
+    }
+
+    def setUp(self) -> None:
+        self.config = Config.objects.create(**self.config_partial)
+        self.job_partial["config_id"] = self.config.id
+
+    @patch("main.services.matching.matcher.logging.getLogger")
+    def test_process_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
+        """Tests that only a single instance of process_job runs at a time."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+
+        jobs = [
+            Job.objects.create(**self.job_partial),
+            Job.objects.create(**self.job_partial),
+        ]
+
+        delay1 = threading.Event()
+        delay2 = threading.Event()
+
+        t1_exit: Optional[float] = None
+        t2_entry: Optional[float] = None
+
+        def mock_load_person_records_1(
+            self: Any, cursor: CursorWrapper, job: Job
+        ) -> int:
+            nonlocal t1_exit
+
+            # Signal that the Matcher advisory lock should be held at this point
+            delay1.set()
+            # Wait for another instance of Matcher to try to obtain the lock
+            delay2.wait()
+
+            t1_exit = time.time()
+            return 0
+
+        def mock_load_person_records_2(
+            self: Any, cursor: CursorWrapper, job: Job
+        ) -> int:
+            nonlocal t2_entry
+
+            t2_entry = time.time()
+            return 0
+
+        def run_matcher(job_id: int) -> None:
+            try:
+                Matcher().process_job(job_id)
+            finally:
+                connection.close()
+
+        with patch(
+            "main.services.matching.matcher.Matcher.load_person_records",
+            new=mock_load_person_records_1,
+        ):
+            t1 = threading.Thread(target=lambda: run_matcher(jobs[0].id))
+
+            # Start Matcher 1
+            t1.start()
+
+            # Wait until Matcher 1 obtains the lock
+            delay1.wait()
+
+            with patch(
+                "main.services.matching.matcher.Matcher.load_person_records",
+                new=mock_load_person_records_2,
+            ):
+                t2 = threading.Thread(target=lambda: run_matcher(jobs[1].id))
+
+                # Start Matcher 2
+                t2.start()
+
+                # Simulate Matcher 1 processing the job
+                time.sleep(3)
+
+                # Signal to allow Matcher 1 to finish and Matcher 2 to start
+                delay2.set()
+
+                t1.join()
+                t2.join()
+
+        self.assertIsNotNone(t1_exit)
+        self.assertIsNotNone(t2_entry)
+
+        # Matcher 2 should only have called run_job after Matcher 1 released the lock
+        self.assertGreater(cast(float, t2_entry), cast(float, t1_exit))
+
+        # Both jobs should have finished
+        all_info_calls = [str(call.args[0]) for call in mock_logger.info.call_args_list]
+        job_finished_logs = [msg for msg in all_info_calls if msg == "Job finished"]
+
+        self.assertEqual(len(job_finished_logs), 2)
