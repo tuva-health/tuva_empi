@@ -172,7 +172,10 @@ def extract_df(
 
 
 def obtain_advisory_lock(cursor: CursorWrapper, lock_id: DbLockId) -> bool:
-    logger.info(f"Waiting for exclusive lock of {lock_id.name} ({lock_id.value})")
+    pid = cursor.connection.info.backend_pid
+    logger.info(
+        f"[pg_pid={pid}] Waiting for exclusive lock of {lock_id.name} ({lock_id.value})"
+    )
 
     # Block until we obtain lock
     lock_sql = sql.SQL(
@@ -181,19 +184,27 @@ def obtain_advisory_lock(cursor: CursorWrapper, lock_id: DbLockId) -> bool:
         """
     )
     cursor.execute(lock_sql, {"lock_id": lock_id.value})
+    rows = cursor.fetchall()
 
-    if cursor.rowcount > 0:
-        # pg_advisory_xact_lock returns void
-        logger.info(f"Acquired exclusive lock of {lock_id.name} ({lock_id.value})")
+    # defensive check: pg_advisory_xact_lock should always return void
+    if len(rows) == 1:
+        logger.info(
+            f"[pg_pid={pid}] Acquired exclusive lock of {lock_id.name} ({lock_id.value})"
+        )
         return True
     else:
-        raise Exception(f"Failed attempting to obtain {lock_id.name} ({lock_id.value})")
+        raise Exception(
+            f"[pg_pid={pid}] Failed attempting to obtain {lock_id.name} ({lock_id.value})"
+        )
 
 
 def try_advisory_lock(
     cursor: CursorWrapper, lock_id: DbLockId, shared: bool = False
 ) -> bool:
-    logger.info(f"Trying (shared={shared}) lock of {lock_id.name} ({lock_id.value})")
+    pid = cursor.connection.info.backend_pid
+    logger.info(
+        f"[pg_pid={pid}] Trying (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+    )
 
     if shared:
         lock_sql = sql.SQL(
@@ -209,23 +220,24 @@ def try_advisory_lock(
         )
 
     cursor.execute(lock_sql, {"lock_id": lock_id.value})
+    rows = cursor.fetchall()
 
-    if cursor.rowcount > 0:
-        row = cursor.fetchone()
-        result = cast(bool, row[0])
+    # defensive check: pg_try_advisory_xact_lock should always return a boolean
+    if len(rows) == 1:
+        result = cast(bool, rows[0][0])
 
         if result:
             logger.info(
-                f"Acquired (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+                f"[pg_pid={pid}] Acquired (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
             )
         else:
             logger.info(
-                f"Failed to acquire (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+                f"[pg_pid={pid}] Failed to acquire (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
             )
 
         return result
     else:
         logger.info(
-            f"Failed to acquire (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
+            f"[pg_pid={pid}] Failed to acquire (shared={shared}) lock of {lock_id.name} ({lock_id.value})"
         )
         return False

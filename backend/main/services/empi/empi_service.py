@@ -1033,6 +1033,9 @@ class EMPIService:
                 lock_acquired = self._obtain_shared_match_update_lock(cursor)
                 assert lock_acquired
 
+                self.logger.info(
+                    f"Selecting MatchGroup {potential_match_id} for update"
+                )
                 match_group = (
                     MatchGroup.objects.select_for_update()
                     .filter(id=potential_match_id)

@@ -3740,7 +3740,7 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
         self.assertIsNotNone(t2_entry)
 
         # EMPIService 2 should have started around the same time as EMPIService 1
-        self.assertLessEqual(cast(float, t2_entry) - cast(float, t1_exit), 3)
+        self.assertLess(cast(float, t2_entry) - cast(float, t1_exit), 1)
 
         # Both instances should have succeeded
         self.assertEqual(
