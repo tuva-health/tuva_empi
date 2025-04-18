@@ -1,15 +1,15 @@
 import selectors
-import unittest
 from typing import cast
 from unittest.mock import MagicMock, patch
 
+from django.test import TestCase
 from django.utils import timezone
 
 from main.models import Config, Job, JobStatus
 from main.services.matching.process_job_runner import ProcessJobRunner
 
 
-class ProcessJobRunnerTestCase(unittest.TestCase):
+class ProcessJobRunnerTestCase(TestCase):
     now = timezone.now()
     process_job_runner: ProcessJobRunner
 

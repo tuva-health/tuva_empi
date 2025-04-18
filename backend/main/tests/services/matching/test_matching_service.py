@@ -1,13 +1,13 @@
-import unittest
 from unittest.mock import MagicMock, patch
 
+from django.test import TestCase
 from django.utils import timezone
 
 from main.models import Config, Job, JobStatus
 from main.services.matching.matching_service import MatchingService
 
 
-class MatchingServiceTestCase(unittest.TestCase):
+class MatchingServiceTestCase(TestCase):
     now = timezone.now()
 
     config_partial = {
