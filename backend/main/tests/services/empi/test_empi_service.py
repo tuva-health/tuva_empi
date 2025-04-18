@@ -3449,7 +3449,6 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -3500,6 +3499,7 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
         self.person_record1 = PersonRecord.objects.create(
             **common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -3507,6 +3507,7 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
         self.person_record2 = PersonRecord.objects.create(
             **common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Smith",
@@ -3514,6 +3515,7 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
         self.person_record3 = PersonRecord.objects.create(
             **common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -3521,6 +3523,7 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
         self.person_record4 = PersonRecord.objects.create(
             **common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
