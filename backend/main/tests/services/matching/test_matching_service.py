@@ -117,7 +117,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
         # run_job is called by run_next_job after the lock is obtained.
         # We mock the first instance so that we can ensure it's run first and also to introduce
         # an artificial delay.
-        def mock_run_job1(self: Any, job: Job) -> tuple[int, Optional[str]]:
+        def mock_run_job1(self: Any, job: Job) -> JobResult:
             nonlocal t1_exit
 
             # Signal that the MatchingService advisory lock should be held at this point
@@ -130,15 +130,15 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             # Add delay so that we can verify the lock is being held
             time.sleep(3)
 
-            return 0, None
+            return JobResult(return_code=0, error_message=None)
 
         # We mock the second instance so that we can verify it's run second.
-        def mock_run_job2(self: Any, job: Job) -> tuple[int, Optional[str]]:
+        def mock_run_job2(self: Any, job: Job) -> JobResult:
             nonlocal t2_entry
 
             t2_entry = time.time()
 
-            return 0, None
+            return JobResult(return_code=0, error_message=None)
 
         # Run run_next_job and close DB connection
         def run_next_job() -> None:
