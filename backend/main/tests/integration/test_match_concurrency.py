@@ -123,7 +123,6 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             "job_id": self.job1.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -158,6 +157,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.person_record1 = PersonRecord.objects.create(
             **common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -165,6 +165,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.person_record2 = PersonRecord.objects.create(
             **common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Smith",
