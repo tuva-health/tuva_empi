@@ -1,0 +1,12 @@
+**
+
+!main
+!tuva_empi
+!.python-version
+!configure.py
+!manage.py
+!README.md
+!requirements.txt
+!tuva-empi-backend
+
+**/__pycache__
