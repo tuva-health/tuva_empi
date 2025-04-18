@@ -32,7 +32,9 @@ from main.services.empi.empi_service import (
 from main.services.matching.matcher import Matcher
 
 
-class MatcherConcurrencyTestCase(TransactionTestCase):
+class MatchConcurrencyTestCase(TransactionTestCase):
+    """Tests concurrency properties between EMPIService.match_person_records and Matcher.process_job."""
+
     now: datetime = timezone.now()
     config: Config
     job1: Job
@@ -109,7 +111,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         )
 
         #
-        # setup for EMPIService
+        # Setup for EMPIService
         #
 
         self.job1 = EMPIService().create_job(
@@ -191,7 +193,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         self.user = User.objects.create()
 
         #
-        # setup for Matcher
+        # Setup for Matcher
         #
 
         self.job2 = EMPIService().create_job(
@@ -235,7 +237,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         t1_exit: Optional[float] = None
         t2_entry: Optional[float] = None
 
-        # EMPIService.validate_update_records is called by EMPIService.match_person_record after the
+        # EMPIService.validate_update_records is called by EMPIService.match_person_records after the
         # lock is obtained. We mock it so that we can ensure it's run first and also to introduce an
         # artificial delay.
         def mock_validate_update_records(
@@ -251,6 +253,10 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
             delay2.wait()
 
             t1_exit = time.time()
+
+            # Add delay so that we can verify the lock is being held
+            time.sleep(3)
+
             return True
 
         # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the lock is
@@ -301,8 +307,8 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
                 # Start Matcher
                 t2.start()
 
-                # Simulate EMPIService performing the match
-                time.sleep(3)
+                # Add delay to ensure Matcher has reached the lock
+                time.sleep(2)
 
                 # Signal to allow EMPIService to finish and Matcher to start
                 delay2.set()
@@ -314,7 +320,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         self.assertIsNotNone(t2_entry)
 
         # Matcher should only have run after EMPIService released the lock
-        self.assertGreater(cast(float, t2_entry), cast(float, t1_exit))
+        self.assertGreater(cast(float, t2_entry) - cast(float, t1_exit), 3)
 
         # EMPIService.match_person_records should have succeeded
         self.assertEqual(
@@ -352,9 +358,12 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
 
             t1_exit = time.time()
 
+            # Add delay so that we can verify the lock is being held
+            time.sleep(3)
+
             return pd.DataFrame([])
 
-        # EMPIService.validate_update_records is called by EMPIService.match_person_record after the
+        # EMPIService.validate_update_records is called by EMPIService.match_person_records after the
         # lock is obtained. We mock it so that we can verify it's run second.
         def mock_validate_update_records(
             self: Any,
@@ -405,8 +414,8 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
                 # Start EMPIService
                 t2.start()
 
-                # Simulate Matcher processing the job
-                time.sleep(3)
+                # Add delay to ensure EMPIService has reached the lock
+                time.sleep(2)
 
                 # Signal to allow Matcher to finish and EMPIService to start
                 delay2.set()

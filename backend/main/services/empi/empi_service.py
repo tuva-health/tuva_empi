@@ -1046,7 +1046,9 @@ class EMPIService:
                     raise MatchGroup.DoesNotExist("Potential match has been replaced")
 
                 if match_group.matched:
-                    raise InvalidPotentialMatch("Potential has already been matched")
+                    raise InvalidPotentialMatch(
+                        "Potential match has already been matched"
+                    )
 
                 if match_group.version != potential_match_version:
                     raise InvalidPotentialMatch("Potential match version is outdated")
