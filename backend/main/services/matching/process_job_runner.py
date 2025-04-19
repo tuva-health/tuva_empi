@@ -4,7 +4,6 @@ import subprocess
 import sys
 from typing import Optional
 
-from main.models import Job
 from main.services.matching.job_runner import JobResult, JobRunner
 
 
@@ -14,12 +13,12 @@ class ProcessJobRunner(JobRunner):
     def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
 
-    def run_job(self, job: Job) -> JobResult:
+    def run_job(self) -> JobResult:
         process: Optional[subprocess.Popen[str]] = None
 
         try:
             process = subprocess.Popen(
-                ["python", "manage.py", "run_matcher_job", f"{job.id}"],
+                ["python", "manage.py", "run_matcher_job"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 close_fds=True,
@@ -80,7 +79,7 @@ class ProcessJobRunner(JobRunner):
             if process:
                 # If the process is still running, kill it
                 if process.poll() is None:
-                    self.logger.warning(f"Killing Job {job.id} process")
+                    self.logger.warning("Killing Job process")
                     process.kill()
 
                 process.wait()

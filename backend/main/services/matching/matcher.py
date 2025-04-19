@@ -1,7 +1,7 @@
 import gc
 import logging
-from datetime import timedelta
 from typing import (
+    Optional,
     TypedDict,
     cast,
 )
@@ -10,8 +10,7 @@ import duckdb
 import pandas as pd
 from django.db import DatabaseError, connection, transaction
 from django.db.backends.utils import CursorWrapper
-from django.db.models import Field, Q
-from django.forms.models import model_to_dict
+from django.db.models import Field
 from django.utils import timezone
 from psycopg import sql
 from splink import DuckDBAPI, Linker  # type: ignore[import-untyped]
@@ -1714,7 +1713,7 @@ class Matcher:
     # Processing job
     #
 
-    def _process_job(self, cursor: CursorWrapper, job: Job) -> None:
+    def process_job(self, cursor: CursorWrapper, job: Job) -> None:
         # Create new Persons for PersonRecordStaging rows with job ID.
         # Then join those new Persons with the PersonRecordStaging rows to link
         # the FK and insert into the PersonRecord table.
@@ -1811,99 +1810,53 @@ class Matcher:
 
     def delete_staging_records(self, job: Job) -> None:
         self.logger.info(f"Deleting staging records with job ID {job.id}")
-        deleted_count, _ = PersonRecordStaging.objects.filter(
-            job_id=job.id
-        ).delete()
+        deleted_count, _ = PersonRecordStaging.objects.filter(job_id=job.id).delete()
         self.logger.info(
             f"Deleted {deleted_count} staging records with job ID {job.id}"
         )
 
-    def claim_next_job(self) -> Job:
-        #
-        # FIXME: Potentially just have new/success/failure and track in_progress using out-of-band method
-        #
-        with transaction.atomic(durable=True):
-            with connection.cursor() as cursor:
-                # Obtain (wait for) lock to prevent multiple Matchers from processing jobs at the
-                # same time. Jobs should be processed sequentially.
-                lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_job)
-                assert lock_acquired
-
-            job = (
-                Job.objects.select_for_update()
-                .filter(Q(status=JobStatus.in_progress) | Q(status=JobStatus.new))
-                .order_by("id")
-                .first()
-            )
-
-            if job:
-                if job.status == JobStatus.in_progress:
-                    self.logger.info(
-                        f"Found in_progress job {job.id}. Checking if it's stale"
-                    )
-
-                    # Once a job is marked in_progress, it should immediately be locked and processed
-                    # in process_job. If it is still in_progress and was updated more than a minute ago
-                    # and isn't locked, it's likely stale. This isn't perfect. The issue arises
-                    # because we set the job to in_progress in a different transaction from the actual
-                    # processing of the job. We can consider other options like out-of-band job
-                    # status updates.
-                    if timezone.now() - job.updated > timedelta(minutes=1):
-                        self.logger.info(f"Job {job.id} looks stale. Retrying")
-                    else:
-                        self.logger.info(f"Job {job.id} looks active. Skipping")
-                        return
-                else:
-                    assert job.status == JobStatus.new
-                    self.logger.info(f"Found new job {job.id}")
-
-                self.logger.info("Processing job: %s", model_to_dict(job))
-
-                job.status = JobStatus.in_progress
-                job.updated = timezone.now()
-                job.save(update_fields=["status", "updated"])
-
-                return job
-            else:
-                self.logger.info("No new jobs found")
-                return
-
-    def process_job(self, job_id: int) -> None:
-        with transaction.atomic(durable=True):
-            with connection.cursor() as cursor:
-                # Obtain (wait for) lock to prevent multiple Matchers from processing jobs at the
-                # same time. Jobs should be processed sequentially.
-                lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_job)
-                assert lock_acquired
-
-                try:
-                    job = Job.objects.select_for_update().get(id=job_id)
-                except Job.DoesNotExist:
-                    self.logger.error(f"Job {job_id} does not exist")
-                    # Raise/rollback, we don't want to record a job failure if it doesn't exist
-                    raise
-
-                # FIXME: Should check that job has either new or in_progress status
-
-                try:
-                    self._process_job(cursor, job)
-                    self.update_job_success(job)
-                    self.delete_staging_records(job)
-
-                # DatabaseError always causes the transaction to be rolled back.
-                # So we raise it and catch it outside the transaction.
-                # https://docs.djangoproject.com/en/5.2/topics/db/transactions/#controlling-transactions-explicitly
-                except DatabaseError:
-                    raise
-                except Exception as e:
-                    self.update_job_failure(job, str(e))
-                    self.delete_staging_records(job)
-
     def process_next_job(self) -> None:
-        # TODO: Should we handle any exceptions here?
-        job = self.claim_next_job()
+        job: Optional[Job] = None
 
         try:
-            self.process_job(job.id)
+            with transaction.atomic(durable=True):
+                with connection.cursor() as cursor:
+                    # Obtain (wait for) lock to prevent multiple Matchers from processing jobs at the
+                    # same time. Jobs should be processed sequentially.
+                    lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_job)
+                    assert lock_acquired
+
+                    job = (
+                        Job.objects.select_for_update()
+                        .filter(status=JobStatus.new)
+                        .order_by("id")
+                        .first()
+                    )
+
+                    if not job:
+                        self.logger.info("No new jobs found")
+                        return
+
+                    try:
+                        self.process_job(cursor, job)
+                        self.update_job_success(job)
+                        self.delete_staging_records(job)
+
+                    # DatabaseError always causes the transaction to be rolled back.
+                    # So we raise it and catch it outside the transaction.
+                    # https://docs.djangoproject.com/en/5.2/topics/db/transactions/#controlling-transactions-explicitly
+                    except DatabaseError:
+                        raise
+                    except Exception as e:
+                        self.logger.exception(f"Unexpected error while processing next Job {job.id if job else None}: {e}")
+                        if job:
+                            self.update_job_failure(job, str(e))
+                            self.delete_staging_records(job)
+                        else:
+                            self.logger.info("No current Job, skipping Job failure status update and staging records cleanup")
         except DatabaseError as e:
-            self.update_job_failure(job, str(e))
+            self.logger.exception(f"Unexpected database error while processing next Job {job.id if job else None}: {e}")
+            if job:
+                self.update_job_failure(job, str(e))
+            else:
+                self.logger.info("No current Job, skipping Job failure status update")

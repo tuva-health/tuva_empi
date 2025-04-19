@@ -7,27 +7,17 @@ from types import FrameType
 from typing import Optional
 
 from django.db import connection, transaction
-from django.forms.models import model_to_dict
-from django.utils import timezone
 
 from main.config import JobRunnerType, get_config
 from main.models import (
     DbLockId,
     Job,
     JobStatus,
-    PersonRecordStaging,
 )
-from django.db.models import Q
 from main.services.matching.job_runner import JobRunner
 from main.services.matching.k8s_job_runner import K8sJobRunner
 from main.services.matching.process_job_runner import ProcessJobRunner
 from main.util.sql import obtain_advisory_lock
-
-
-class MatchingServiceInterrupted(Exception):
-    """MatchingService was interrupted by a signal."""
-
-    pass
 
 
 class MatchingService:
@@ -69,11 +59,9 @@ class MatchingService:
             sys.exit(1)
 
     def get_available_jobs_count(self) -> int:
-        return Job.objects.filter(Q(status=JobStatus.in_progress) | Q(status=JobStatus.new)).count()
+        return Job.objects.filter(status=JobStatus.new).count()
 
     def run_next_job(self) -> None:
-        # TODO: Check if there is a running job already and attach to it/get logs
-
         with transaction.atomic(durable=True):
             # Obtain (wait for) lock to prevent multiple MatchingServices from running jobs at the same time.
             # Jobs should be run sequentially.
@@ -94,11 +82,13 @@ class MatchingService:
 
             start_time = time.perf_counter()
 
-            try:
-                job_result = self.job_runner.run_job()
-            except Exception as e:
-                # FIXME: What to do here? If we fail in run_job, either 1. the job wasn't started, 2. the job was started but we failed getting it's logs or 3. the job started and ran, but we failed in retrieving it's exit code or in some other way
-                pass
+            # If run_job throws, we allow it to bubble up and retry in the main start loop
+            job_result = self.job_runner.run_job()
+
+            if job_result.return_code != 0:
+                self.logger.error(
+                    f"Unexpected job runner failure: {job_result.error_message}"
+                )
 
             end_time = time.perf_counter()
             elapsed_time = end_time - start_time

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 
 from main.config import get_config
-from main.models import Job
 from main.services.matching.job_runner import JobResult, JobRunner
 from main.util.k8s import K8sJobClient, SecretVolume
 
@@ -25,16 +24,14 @@ class K8sJobRunner(JobRunner):
 
     def _run_job(
         self,
-        job_id: int,
         job_name: str,
         job_image: str,
         secret_volume: Optional[SecretVolume],
     ) -> None:
         self.k8s.run_job(
             job_name=job_name,
-            # FIXME: Use production image, even in dev
             image=job_image,
-            command=["python", "manage.py", "run_matcher_job", str(job_id)],
+            command=["python", "manage.py", "run_matcher_job"],
             secret_volume=secret_volume,
             termination_grace_period_secords=0,
             # Only launch a single pod
@@ -54,21 +51,20 @@ class K8sJobRunner(JobRunner):
             ),
         )
 
-    def run_job(self, job: Job) -> JobResult:
+    def run_job(self) -> JobResult:
         """Run Tuva EMPI Job as a k8s job.
 
-        NOTE: Currently if anything fails interacting with the k8s API, we just throw
-        (which will result in marking the MatchingService as failed). This is easy
-        enough to get started with, but there are probably a lot of opportunities
-        to retry in case of intermittent API/network issues.
+        NOTE: If anything fails interacting with the k8s API, we just throw and
+        allow the MatchingService to retry.
         """
-        job_name = f"matcher-job-{job.id}"
+        job_name = "matcher-job"
         config = get_config()["matching_service"]["k8s_job_runner"]
+
+        # FIXME: Check if there is a running job already and attach to it/get logs
 
         # Run the k8s job
         try:
             self._run_job(
-                job_id=job.id,
                 job_name=job_name,
                 job_image=config["job_image"],
                 secret_volume=(
