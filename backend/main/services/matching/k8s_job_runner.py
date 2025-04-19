@@ -36,8 +36,6 @@ class K8sJobRunner(JobRunner):
             image=job_image,
             command=["python", "manage.py", "run_matcher_job", str(job_id)],
             secret_volume=secret_volume,
-            # We want the Job to exit immediately when we cancel it to avoid the case where the
-            # MatchingService exits but the Job is still running.
             termination_grace_period_secords=0,
             # Only launch a single pod
             parallelism=1,
@@ -60,7 +58,7 @@ class K8sJobRunner(JobRunner):
         """Run Tuva EMPI Job as a k8s job.
 
         NOTE: Currently if anything fails interacting with the k8s API, we just throw
-        (which will result in the MatchingService cancelling the Job). This is easy
+        (which will result in marking the MatchingService as failed). This is easy
         enough to get started with, but there are probably a lot of opportunities
         to retry in case of intermittent API/network issues.
         """
@@ -131,16 +129,17 @@ class K8sJobRunner(JobRunner):
         log_thread = threading.Thread(
             target=lambda: self._stream_job_pod_logs(job_name, pod_state.name)
         )
-        log_thread.start()
-
-        # Wait for the job to finish
         try:
-            self.k8s.wait_for_job_completion(job_name)
-        except Exception as e:
-            self.logger.exception(f"Failed waiting for k8s job to complete: {e}")
-            raise
+            log_thread.start()
 
-        log_thread.join()
+            # Wait for the job to finish
+            try:
+                self.k8s.wait_for_job_completion(job_name)
+            except Exception as e:
+                self.logger.exception(f"Failed waiting for k8s job to complete: {e}")
+                raise
+        finally:
+            log_thread.join()
 
         pod_container_states = self.k8s.get_pod_container_states(pod_state.name)
 
@@ -154,7 +153,3 @@ class K8sJobRunner(JobRunner):
             return_code=pod_container_state.terminated.exit_code,
             error_message=pod_container_state.terminated.reason,
         )
-
-    def cancel_job(self, job: Job) -> JobResult:
-        # TODO: Implement me
-        raise NotImplementedError()

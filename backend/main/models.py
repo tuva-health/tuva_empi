@@ -43,6 +43,7 @@ class Config(models.Model):
 
 class JobStatus(models.TextChoices):
     new = "new"
+    in_progress = "in-progress"
     succeeded = "succeeded"
     failed = "failed"
 
