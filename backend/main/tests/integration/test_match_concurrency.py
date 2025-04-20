@@ -10,6 +10,7 @@ from django.utils import timezone
 from main.models import (
     Config,
     Job,
+    JobStatus,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -28,7 +29,7 @@ from main.tests.util.concurrency import run_with_lock_contention
 
 
 class MatchConcurrencyTestCase(TransactionTestCase):
-    """Tests concurrency properties between EMPIService.match_person_records and Matcher.process_job."""
+    """Tests concurrency properties between EMPIService.match_person_records and Matcher.process_next_job."""
 
     now: datetime = timezone.now()
     config: Config
@@ -112,6 +113,8 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.job1 = EMPIService().create_job(
             "s3://tuva-health-example/test", self.config.id
         )
+        self.job1.status = JobStatus.succeeded
+        self.job1.save()
 
         common_person_record = {
             "created": self.now,
@@ -226,7 +229,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         )
 
     def test_job_waits_on_match_person_records(self) -> None:
-        """Tests that if EMPIService.match_person_records holds the match advisory lock, then Matcher.process_job waits."""
+        """Tests that if EMPIService.match_person_records holds the match advisory lock, then Matcher.process_next_job waits."""
 
         # Run EMPIService.match_person_records and close DB connection
         def match_person_records() -> None:
@@ -237,10 +240,10 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        # Run Matcher.process_job and close DB connection
-        def process_job(job_id: int) -> None:
+        # Run Matcher.process_next_job and close DB connection
+        def process_next_job() -> None:
             try:
-                Matcher().process_job(job_id)
+                Matcher().process_next_job()
             finally:
                 connection.close()
 
@@ -250,10 +253,10 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             "main.services.empi.empi_service.EMPIService.validate_update_records",
             None,
             match_person_records,
-            # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the
+            # Matcher.extract_current_results_with_lock is called by Matcher.process_next_job after the
             # lock is obtained.
             "main.services.matching.matcher.Matcher.extract_current_results_with_lock",
-            # Valid return value for extract_current_results_with_lock so that Matcher.process_job
+            # Valid return value for extract_current_results_with_lock so that Matcher.process_next_job
             # succeeds
             pd.DataFrame(
                 columns=[
@@ -274,7 +277,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
                     "person_record_r_id": "int64",
                 }
             ),
-            lambda: process_job(self.job2.id),
+            process_next_job,
             3,
         )
 
@@ -288,22 +291,22 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.assertEqual(
             MatchEvent.objects.filter(type=MatchEventType.manual_match).count(), 1
         )
-        # Matcher.process_job should have succeeded
+        # Matcher.process_next_job should have succeeded
         self.assertEqual(
             MatchEvent.objects.filter(type=MatchEventType.auto_matches).count(), 1
         )
 
     def test_match_person_records_fails_when_job_runs(self) -> None:
-        """Tests that if Matcher.process_job holds the match advisory lock, then EMPIService.match_person_records throws.
+        """Tests that if Matcher.process_next_job holds the match advisory lock, then EMPIService.match_person_records throws.
 
         This is the same test as above, but reversed. match_person_records doesn't wait for Matcher
         to release the lock because it might wait for a long time in the request/response cycle.
         """
 
-        # Run Matcher.process_job and close DB connection
-        def process_job(job_id: int) -> None:
+        # Run Matcher.process_next_job and close DB connection
+        def process_next_job() -> None:
             try:
-                Matcher().process_job(job_id)
+                Matcher().process_next_job()
             finally:
                 connection.close()
 
@@ -318,10 +321,10 @@ class MatchConcurrencyTestCase(TransactionTestCase):
                 connection.close()
 
         t1_exit, t2_entry = run_with_lock_contention(
-            # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the
+            # Matcher.extract_current_results_with_lock is called by Matcher.process_next_job after the
             # lock is obtained.
             patch1="main.services.matching.matcher.Matcher.extract_current_results_with_lock",
-            # Return empty dataframe from extract_current_results_with_lock so that Matcher.process_job
+            # Return empty dataframe from extract_current_results_with_lock so that Matcher.process_next_job
             # succeeds
             patch1_return=pd.DataFrame(
                 columns=[
@@ -342,7 +345,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
                     "person_record_r_id": "int64",
                 }
             ),
-            function1=lambda: process_job(self.job2.id),
+            function1=process_next_job,
             # EMPIService.validate_update_records is called by EMPIService.match_person_records after
             # the lock is obtained.
             patch2="main.services.empi.empi_service.EMPIService.validate_update_records",
@@ -354,7 +357,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.assertIsNotNone(t1_exit)
         self.assertIsNone(t2_entry)
 
-        # Matcher.process_job should have succeeded
+        # Matcher.process_next_job should have succeeded
         self.assertEqual(
             MatchEvent.objects.filter(type=MatchEventType.auto_matches).count(), 1
         )

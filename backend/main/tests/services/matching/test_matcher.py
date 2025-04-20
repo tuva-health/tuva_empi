@@ -11,7 +11,7 @@ import pandas as pd
 import pandas.testing as pdt
 import psycopg
 from django.conf import settings
-from django.db import OperationalError, connection, transaction
+from django.db import DatabaseError, OperationalError, connection, transaction
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
@@ -19,6 +19,7 @@ from psycopg import sql
 from main.models import (
     Config,
     Job,
+    JobStatus,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -56,6 +57,61 @@ class HashableRecordPartialDict(TypedDict):
     phone: str
 
 
+test_splink_settings = {
+    "probability_two_random_records_match": 0.00298012298012298,
+    "em_convergence": 0.0001,
+    "max_iterations": 25,
+    "blocking_rules_to_generate_predictions": [
+        {"blocking_rule": '(l."last_name" = r."last_name")'},
+    ],
+    "comparisons": [
+        {
+            "output_column_name": "first_name",
+            "comparison_levels": [
+                {
+                    "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
+                    "label_for_charts": "first_name is NULL",
+                    "is_null_level": True,
+                },
+                {
+                    "sql_condition": '"first_name_l" = "first_name_r"',
+                    "label_for_charts": "Exact match on first_name",
+                    "m_probability": 0.49142094931763786,
+                    "u_probability": 0.0057935713975033705,
+                    "tf_adjustment_column": "first_name",
+                    "tf_adjustment_weight": 1.0,
+                },
+                {
+                    "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.92',
+                    "label_for_charts": "Jaro-Winkler distance of first_name >= 0.92",
+                    "m_probability": 0.15176057384758357,
+                    "u_probability": 0.0023429457903817435,
+                },
+                {
+                    "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.88',
+                    "label_for_charts": "Jaro-Winkler distance of first_name >= 0.88",
+                    "m_probability": 0.07406496776118936,
+                    "u_probability": 0.0015484319951285285,
+                },
+                {
+                    "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.7',
+                    "label_for_charts": "Jaro-Winkler distance of first_name >= 0.7",
+                    "m_probability": 0.07908610771504865,
+                    "u_probability": 0.018934945558406913,
+                },
+                {
+                    "sql_condition": "ELSE",
+                    "label_for_charts": "All other comparisons",
+                    "m_probability": 0.20366740135854072,
+                    "u_probability": 0.9713801052585794,
+                },
+            ],
+            "comparison_description": "NameComparison",
+        }
+    ],
+}
+
+
 class MatcherTestCase(TestCase):
     logger: logging.Logger
     splink_settings: dict[str, Any]
@@ -63,59 +119,7 @@ class MatcherTestCase(TestCase):
     def setUp(self) -> None:
         self.maxDiff = None
         self.logger = logging.getLogger(__name__)
-        self.splink_settings = {
-            "probability_two_random_records_match": 0.00298012298012298,
-            "em_convergence": 0.0001,
-            "max_iterations": 25,
-            "blocking_rules_to_generate_predictions": [
-                {"blocking_rule": '(l."last_name" = r."last_name")'},
-            ],
-            "comparisons": [
-                {
-                    "output_column_name": "first_name",
-                    "comparison_levels": [
-                        {
-                            "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
-                            "label_for_charts": "first_name is NULL",
-                            "is_null_level": True,
-                        },
-                        {
-                            "sql_condition": '"first_name_l" = "first_name_r"',
-                            "label_for_charts": "Exact match on first_name",
-                            "m_probability": 0.49142094931763786,
-                            "u_probability": 0.0057935713975033705,
-                            "tf_adjustment_column": "first_name",
-                            "tf_adjustment_weight": 1.0,
-                        },
-                        {
-                            "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.92',
-                            "label_for_charts": "Jaro-Winkler distance of first_name >= 0.92",
-                            "m_probability": 0.15176057384758357,
-                            "u_probability": 0.0023429457903817435,
-                        },
-                        {
-                            "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.88',
-                            "label_for_charts": "Jaro-Winkler distance of first_name >= 0.88",
-                            "m_probability": 0.07406496776118936,
-                            "u_probability": 0.0015484319951285285,
-                        },
-                        {
-                            "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.7',
-                            "label_for_charts": "Jaro-Winkler distance of first_name >= 0.7",
-                            "m_probability": 0.07908610771504865,
-                            "u_probability": 0.018934945558406913,
-                        },
-                        {
-                            "sql_condition": "ELSE",
-                            "label_for_charts": "All other comparisons",
-                            "m_probability": 0.20366740135854072,
-                            "u_probability": 0.9713801052585794,
-                        },
-                    ],
-                    "comparison_description": "NameComparison",
-                }
-            ],
-        }
+        self.splink_settings = copy.deepcopy(test_splink_settings)
 
     @staticmethod
     def sha256(value: str) -> bytes:
@@ -1546,7 +1550,8 @@ class MatcherTestCase(TestCase):
         # Run process_job
         #
 
-        Matcher().process_job(job.id)
+        with connection.cursor() as cursor:
+            Matcher().process_job(cursor, job)
 
         #
         # Check that PersonRecords were loaded (and deduplicated)
@@ -1642,7 +1647,8 @@ class MatcherTestCase(TestCase):
         with self.assertLogs(
             "main.services.matching.matcher", level=logging.INFO
         ) as log_capture:
-            Matcher().process_job(job.id)
+            with connection.cursor() as cursor:
+                Matcher().process_job(cursor, job)
 
         logs = "\n".join(log_capture.output)
 
@@ -1715,7 +1721,8 @@ class MatcherTestCase(TestCase):
         with self.assertLogs(
             "main.services.matching.matcher", level=logging.INFO
         ) as log_capture:
-            Matcher().process_job(job.id)
+            with connection.cursor() as cursor:
+                Matcher().process_job(cursor, job)
 
         logs = "\n".join(log_capture.output)
 
@@ -1776,6 +1783,242 @@ class MatcherTestCase(TestCase):
         person_action = cast(PersonAction, PersonAction.objects.first())
         self.assertEqual(person_action.match_event.job_id, job.id)
         self.assertEqual(person_action.type, PersonActionType.add_record.value)
+
+
+class ProcessNextJobTestCase(TransactionTestCase):
+    """Tests for Matcher.process_next_job method (and supporting methods)."""
+
+    empi: EMPIService
+    config: Config
+    job1: Job
+    job2: Job
+
+    def setUp(self) -> None:
+        self.maxDiff = None
+
+        self.empi = EMPIService()
+        self.config = self.empi.create_config(
+            {
+                "splink_settings": copy.deepcopy(test_splink_settings),
+                # Increase the potential match threshold so that run_splink_prediction returns zero results
+                "potential_match_threshold": 0.002,
+                "auto_match_threshold": 0.0023,
+            }
+        )
+        self.job1 = self.empi.create_job(
+            "s3://tuva-health-example/test", self.config.id
+        )
+        self.job2 = self.empi.create_job(
+            "s3://tuva-health-example/test", self.config.id
+        )
+
+        common_person_record = {
+            "created": timezone.now(),
+            "data_source": "example-ds-1",
+            "first_name": "test-first-name",
+            "last_name": "test-last-name",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        PersonRecordStaging.objects.create(
+            **common_person_record, job_id=self.job1.id, source_person_id="a1"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, job_id=self.job1.id, source_person_id="a2"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, job_id=self.job2.id, source_person_id="a3"
+        )
+
+        self.assertEqual(self.job1.status, JobStatus.new)
+        self.assertEqual(self.job2.status, JobStatus.new)
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+    def test_deleted_staging_records(self) -> None:
+        """Method delete_staging_records should only delete PatientRecordStaging rows for the provided Job."""
+        Matcher().delete_staging_records(self.job1)
+
+        self.assertEqual(PersonRecordStaging.objects.count(), 1)
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job1.id).count(), 0
+        )
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job2.id).count(), 1
+        )
+
+    @patch("main.services.matching.matcher.Matcher.process_job")
+    def test_process_next_job_failure_exc(self, mock_process_job: MagicMock) -> None:
+        """Method process_next_job should mark Job as failed if process_job throws an exception."""
+        mock_process_job.side_effect = ValueError("Something unexpected happened")
+
+        Matcher().process_next_job()
+
+        self.job1.refresh_from_db()
+        self.job2.refresh_from_db()
+
+        # job1 status should be failed
+        self.assertEqual(self.job1.status, JobStatus.failed)
+        self.assertEqual(self.job1.reason, "Error: Something unexpected happened")
+        # process_next_job should clear out staged records for the job1
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job1.id).count(), 0
+        )
+
+        # job2 status should remain new
+        self.assertEqual(self.job2.status, JobStatus.new)
+        self.assertIsNone(self.job2.reason)
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job2.id).count(), 1
+        )
+
+    @patch("main.services.matching.matcher.Matcher.process_job")
+    def test_process_next_job_failure_database_exc(
+        self, mock_process_job: MagicMock
+    ) -> None:
+        """Method process_next_job should mark Job as failed if process_job throws a DatabaseError exception."""
+        mock_process_job.side_effect = DatabaseError("Database error occurred")
+
+        Matcher().process_next_job()
+
+        self.job1.refresh_from_db()
+        self.job2.refresh_from_db()
+
+        # job1 status should be failed
+        self.assertEqual(self.job1.status, JobStatus.failed)
+        self.assertEqual(self.job1.reason, "Error: Database error occurred")
+        # process_next_job should clear out staged records for the job
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job1.id).count(), 0
+        )
+
+        # job2 status should remain new
+        self.assertEqual(self.job2.status, JobStatus.new)
+        self.assertIsNone(self.job2.reason)
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job2.id).count(), 1
+        )
+
+    def test_process_next_job_success(self) -> None:
+        """Method process_next_job should mark Job as succeeded if process_job returns."""
+        Matcher().process_next_job()
+
+        self.job1.refresh_from_db()
+        self.job2.refresh_from_db()
+
+        # job1 status should be succeeded
+        self.assertEqual(self.job1.status, JobStatus.succeeded)
+        self.assertIsNone(self.job1.reason)
+        # process_next_job should clear out staged records for the job
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job1.id).count(), 0
+        )
+
+        # job2 status should remain new
+        self.assertEqual(self.job2.status, JobStatus.new)
+        self.assertIsNone(self.job2.reason)
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job2.id).count(), 1
+        )
+
+        # PersonRecords should have been loaded
+        self.assertEqual(PersonRecord.objects.count(), 2)
+
+    @patch("main.services.matching.matcher.Matcher.run_splink_prediction")
+    def test_process_next_job_failure_rollback(
+        self, mock_run_splink_prediction: MagicMock
+    ) -> None:
+        """Method process_next_job should not commit some changes if an exception occurs in process_job."""
+        # run_splink_prediction is called in process_job after PersonRecords are loaded
+        mock_run_splink_prediction.side_effect = ValueError("Test error")
+
+        Matcher().process_next_job()
+
+        self.job1.refresh_from_db()
+
+        # job1 status should be failed
+        self.assertEqual(self.job1.status, JobStatus.failed)
+        self.assertEqual(self.job1.reason, "Error: Test error")
+        # process_next_job should clear out staged records for the job
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job1.id).count(), 0
+        )
+
+        # No PersonRecords should have been loaded
+        self.assertEqual(PersonRecord.objects.count(), 0)
+
+    def test_cleanup_failed_job_ok(self) -> None:
+        """Method cleanup_failed_fob should mark Job as failed if Job exists and status is still new."""
+        Matcher().cleanup_failed_job(self.job1, ValueError("Test error"))
+
+        self.job1.refresh_from_db()
+        self.job2.refresh_from_db()
+
+        # job1 status should be failed
+        self.assertEqual(self.job1.status, JobStatus.failed)
+        self.assertEqual(self.job1.reason, "Error: Test error")
+        # cleanup_failed_job should clear out staged records for the job
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job1.id).count(), 0
+        )
+
+        # job2 status should remain new
+        self.assertEqual(self.job2.status, JobStatus.new)
+        self.assertIsNone(self.job2.reason)
+        self.assertEqual(
+            PersonRecordStaging.objects.filter(job_id=self.job2.id).count(), 1
+        )
+
+    def test_cleanup_failed_job_no_overwrite(self) -> None:
+        """Method cleanup_failed_job should not update Job status if status isn't new."""
+        self.job1.status = JobStatus.succeeded
+        self.job1.save()
+
+        with self.assertRaisesMessage(
+            Exception,
+            "Failed to update Job failure status and cleanup staging records."
+            f" Job {self.job1.id} status is {self.job1.status}, expected {JobStatus.new.value}.",
+        ) as cm:
+            Matcher().cleanup_failed_job(self.job1, ValueError("Test error"))
+
+        self.assertIsInstance(cm.exception.__cause__, ValueError)
+
+        self.job1.refresh_from_db()
+        self.assertEqual(self.job1.status, JobStatus.succeeded)
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+    def test_cleanup_failed_job_no_job(self) -> None:
+        """Method cleanup_failed_job should not update Job status if the job doesn't exist."""
+        with self.assertRaisesMessage(
+            Exception,
+            "No current Job, skipping Job failure status update and staging records cleanup",
+        ) as cm:
+            Matcher().cleanup_failed_job(None, ValueError("Test error"))
+
+        self.assertIsInstance(cm.exception.__cause__, ValueError)
+
+    def test_cleanup_failed_job_no_job_in_db(self) -> None:
+        """Method cleanup_failed_job should not update Job status if the job doesn't exist in DB."""
+        job3 = self.empi.create_job("s3://tuva-health-example/test", self.config.id)
+
+        Job.objects.filter(id=job3.id).delete()
+
+        with self.assertRaisesMessage(
+            Exception,
+            "Failed to update Job failure status and cleanup staging records."
+            f" Job {job3.id} does not exist.",
+        ) as cm:
+            Matcher().cleanup_failed_job(job3, ValueError("Test error"))
+
+        self.assertIsInstance(cm.exception.__cause__, ValueError)
 
 
 class MatcherWithLockingTestCase(TransactionTestCase):
@@ -2245,15 +2488,15 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         )
 
     @patch("main.services.matching.matcher.logging.getLogger")
-    def test_process_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
-        """Tests that only a single instance of process_job runs at a time."""
+    def test_process_next_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
+        """Tests that only a single instance of process_next_job runs at a time."""
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
 
-        # Run process_job and close DB connection
-        def process_job(job_id: int) -> None:
+        # Run process_next_job and close DB connection
+        def process_next_job() -> None:
             try:
-                Matcher().process_job(job_id)
+                Matcher().process_next_job()
             finally:
                 connection.close()
 
@@ -2261,11 +2504,11 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
             patch1="main.services.matching.matcher.Matcher.load_person_records",
             # Return zero from load_person_records
             patch1_return=0,
-            function1=lambda: process_job(self.job1.id),
+            function1=process_next_job,
             patch2="main.services.matching.matcher.Matcher.load_person_records",
             # Return zero from load_person_records
             patch2_return=0,
-            function2=lambda: process_job(self.job2.id),
+            function2=process_next_job,
             post_contention_delay=3,
         )
 
@@ -2275,8 +2518,13 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         # Matcher 2 should only have run after Matcher 1 released the lock
         self.assertGreater(cast(float, t2_entry) - cast(float, t1_exit), 3)
 
-        # Both jobs should have finished
-        all_info_calls = [str(call.args[0]) for call in mock_logger.info.call_args_list]
-        job_finished_logs = [msg for msg in all_info_calls if msg == "Job finished"]
+        # Both jobs should have succeeded
+        self.job1.refresh_from_db()
+        self.assertEqual(self.job1.status, JobStatus.succeeded)
+        self.assertIsNone(self.job1.reason)
 
-        self.assertEqual(len(job_finished_logs), 2)
+        self.job2.refresh_from_db()
+        self.assertEqual(self.job2.status, JobStatus.succeeded)
+        self.assertIsNone(self.job2.reason)
+
+    # FIXME: Add test for cleanup_failed_job concurrency
