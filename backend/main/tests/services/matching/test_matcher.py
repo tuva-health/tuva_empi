@@ -13,7 +13,7 @@ import pandas as pd
 import pandas.testing as pdt
 import psycopg
 from django.conf import settings
-from django.db import OperationalError, connection, transaction
+from django.db import DatabaseError, OperationalError, connection, transaction
 from django.db.backends.utils import CursorWrapper
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -22,6 +22,7 @@ from psycopg import sql
 from main.models import (
     Config,
     Job,
+    JobStatus,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -1548,7 +1549,8 @@ class MatcherTestCase(TestCase):
         # Run process_job
         #
 
-        Matcher().process_job(job.id)
+        with connection.cursor() as cursor:
+            Matcher().process_job(cursor, job)
 
         #
         # Check that PersonRecords were loaded (and deduplicated)
@@ -1644,7 +1646,8 @@ class MatcherTestCase(TestCase):
         with self.assertLogs(
             "main.services.matching.matcher", level=logging.INFO
         ) as log_capture:
-            Matcher().process_job(job.id)
+            with connection.cursor() as cursor:
+                Matcher().process_job(cursor, job)
 
         logs = "\n".join(log_capture.output)
 
@@ -1717,7 +1720,8 @@ class MatcherTestCase(TestCase):
         with self.assertLogs(
             "main.services.matching.matcher", level=logging.INFO
         ) as log_capture:
-            Matcher().process_job(job.id)
+            with connection.cursor() as cursor:
+                Matcher().process_job(cursor, job)
 
         logs = "\n".join(log_capture.output)
 
@@ -1778,6 +1782,222 @@ class MatcherTestCase(TestCase):
         person_action = cast(PersonAction, PersonAction.objects.first())
         self.assertEqual(person_action.match_event.job_id, job.id)
         self.assertEqual(person_action.type, PersonActionType.add_record.value)
+
+    def test_deleted_staging_records(self) -> None:
+        """Method delete_staging_records should only delete PatientRecordStaging rows for the provided Job."""
+        empi = EMPIService()
+        config = empi.create_config(
+            {
+                "splink_settings": self.splink_settings,
+                # Increase the potential match threshold so that run_splink_prediction returns zero results
+                "potential_match_threshold": 0.002,
+                "auto_match_threshold": 0.0023,
+            }
+        )
+        job1 = empi.create_job("s3://tuva-health-example/test", config.id)
+        job2 = empi.create_job("s3://tuva-health-example/test", config.id)
+
+        common_person_record = {
+            "created": timezone.now(),
+            "data_source": "example-ds-1",
+            "first_name": "test-first-name",
+            "last_name": "test-last-name",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        PersonRecordStaging.objects.create(
+            **common_person_record, job_id=job1.id, source_person_id="a1"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, job_id=job1.id, source_person_id="a2"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, job_id=job2.id, source_person_id="a2"
+        )
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+        Matcher().delete_staging_records(job1)
+
+        self.assertEqual(PersonRecordStaging.objects.count(), 1)
+        self.assertEqual(PersonRecordStaging.objects.filter(job_id=job1.id).count(), 0)
+        self.assertEqual(PersonRecordStaging.objects.filter(job_id=job2.id).count(), 1)
+
+    @patch("main.services.matching.matcher.Matcher.process_job")
+    def test_process_next_job_failure_exc(self, mock_process_job: MagicMock) -> None:
+        """Method process_next_job should mark Job as failed if process_job throws an exception."""
+        empi = EMPIService()
+        config = empi.create_config(
+            {
+                "splink_settings": self.splink_settings,
+                # Increase the potential match threshold so that run_splink_prediction returns zero results
+                "potential_match_threshold": 0.002,
+                "auto_match_threshold": 0.0023,
+            }
+        )
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
+
+        common_person_record = {
+            "created": timezone.now(),
+            "job_id": job.id,
+            "data_source": "example-ds-1",
+            "first_name": "test-first-name",
+            "last_name": "test-last-name",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a1"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a2"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a2"
+        )
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+        mock_process_job.side_effect = ValueError("Something unexpected happened")
+
+        Matcher().process_next_job()
+
+        # Refresh the job from the database to get updated status
+        job.refresh_from_db()
+
+        # Job status should be failed
+        self.assertEqual(job.status, JobStatus.failed)
+        self.assertEqual(job.reason, "Error: Something unexpected happened")
+        # process_next_job should clear out staged records for the job
+        self.assertEqual(PersonRecordStaging.objects.count(), 0)
+
+    @patch("main.services.matching.matcher.Matcher.process_job")
+    def test_process_next_job_failure_database_exc(
+        self, mock_process_job: MagicMock
+    ) -> None:
+        """Method process_next_job should mark Job as failed if process_job throws a DatabaseError exception."""
+        empi = EMPIService()
+        config = empi.create_config(
+            {
+                "splink_settings": self.splink_settings,
+                # Increase the potential match threshold so that run_splink_prediction returns zero results
+                "potential_match_threshold": 0.002,
+                "auto_match_threshold": 0.0023,
+            }
+        )
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
+
+        common_person_record = {
+            "created": timezone.now(),
+            "job_id": job.id,
+            "data_source": "example-ds-1",
+            "first_name": "test-first-name",
+            "last_name": "test-last-name",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a1"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a2"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a2"
+        )
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+        mock_process_job.side_effect = DatabaseError("Database error occurred")
+
+        Matcher().process_next_job()
+
+        # Refresh the job from the database to get updated status
+        job.refresh_from_db()
+
+        # Job status should be failed
+        self.assertEqual(job.status, JobStatus.failed)
+        self.assertEqual(job.reason, "Error: Database error occurred")
+        # process_next_job should clear out staged records for the job
+        self.assertEqual(PersonRecordStaging.objects.count(), 0)
+
+    @patch("main.services.matching.matcher.Matcher.process_job")
+    def test_process_next_job_success(self, mock_process_job: MagicMock) -> None:
+        """Method process_next_job should mark Job as succeeded if process_job returns."""
+        empi = EMPIService()
+        config = empi.create_config(
+            {
+                "splink_settings": self.splink_settings,
+                # Increase the potential match threshold so that run_splink_prediction returns zero results
+                "potential_match_threshold": 0.002,
+                "auto_match_threshold": 0.0023,
+            }
+        )
+        job = empi.create_job("s3://tuva-health-example/test", config.id)
+
+        common_person_record = {
+            "created": timezone.now(),
+            "job_id": job.id,
+            "data_source": "example-ds-1",
+            "first_name": "test-first-name",
+            "last_name": "test-last-name",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a1"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a2"
+        )
+        PersonRecordStaging.objects.create(
+            **common_person_record, source_person_id="a2"
+        )
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+        Matcher().process_next_job()
+
+        # Refresh the job from the database to get updated status
+        job.refresh_from_db()
+
+        # Job status should be failed
+        self.assertEqual(job.status, JobStatus.succeeded)
+        self.assertIsNone(job.reason)
+        # process_next_job should clear out staged records for the job
+        self.assertEqual(PersonRecordStaging.objects.count(), 0)
 
 
 class MatcherWithLockingTestCase(TransactionTestCase):
@@ -2247,8 +2467,8 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         )
 
     @patch("main.services.matching.matcher.logging.getLogger")
-    def test_process_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
-        """Tests that only a single instance of process_job runs at a time."""
+    def test_process_next_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
+        """Tests that only a single instance of process_next_job runs at a time."""
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
 
@@ -2258,7 +2478,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         t1_exit: Optional[float] = None
         t2_entry: Optional[float] = None
 
-        # load_person_records is called by process_job after the lock is obtained.
+        # load_person_records is called by process_next_job after the lock is obtained.
         # We mock the first instance so that we can ensure it's run first and also to introduce
         # an artificial delay.
         def mock_load_person_records_1(
@@ -2288,10 +2508,10 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
 
             return 0
 
-        # Run process_job and close DB connection
-        def process_job(job_id: int) -> None:
+        # Run process_next_job and close DB connection
+        def process_next_job() -> None:
             try:
-                Matcher().process_job(job_id)
+                Matcher().process_next_job()
             finally:
                 connection.close()
 
@@ -2299,7 +2519,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
             "main.services.matching.matcher.Matcher.load_person_records",
             new=mock_load_person_records_1,
         ):
-            t1 = threading.Thread(target=lambda: process_job(self.job1.id))
+            t1 = threading.Thread(target=process_next_job)
 
             # Start Matcher 1
             t1.start()
@@ -2311,7 +2531,7 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
                 "main.services.matching.matcher.Matcher.load_person_records",
                 new=mock_load_person_records_2,
             ):
-                t2 = threading.Thread(target=lambda: process_job(self.job2.id))
+                t2 = threading.Thread(target=process_next_job)
 
                 # Start Matcher 2
                 t2.start()
@@ -2331,8 +2551,11 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         # Matcher 2 should only have run after Matcher 1 released the lock
         self.assertGreater(cast(float, t2_entry) - cast(float, t1_exit), 3)
 
-        # Both jobs should have finished
-        all_info_calls = [str(call.args[0]) for call in mock_logger.info.call_args_list]
-        job_finished_logs = [msg for msg in all_info_calls if msg == "Job finished"]
+        # Both jobs should have succeeded
+        self.job1.refresh_from_db()
+        self.assertEqual(self.job1.status, JobStatus.succeeded)
+        self.assertIsNone(self.job1.reason)
 
-        self.assertEqual(len(job_finished_logs), 2)
+        self.job2.refresh_from_db()
+        self.assertEqual(self.job2.status, JobStatus.succeeded)
+        self.assertIsNone(self.job2.reason)

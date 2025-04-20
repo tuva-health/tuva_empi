@@ -43,45 +43,73 @@ class MatchingServiceTestCase(TestCase):
 
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_failure(self, mock_run_job: MagicMock) -> None:
-        """Method run_next_job should update the Job in the DB if Job runner fails to run the Job."""
+        """Method run_next_job should log error if Job runner fails to run the Job."""
         mock_run_job.return_value = JobResult(1, "Out of memory\n")
+        self.matching_service.logger = MagicMock()
 
         self.matching_service.run_next_job()
 
         # Refresh the job from the database to get updated status
         self.job.refresh_from_db()
 
-        # Assert that the job status is failed and the reason is saved
-        self.assertEqual(self.job.status, JobStatus.failed)
-        self.assertIn("Out of memory", str(self.job.reason))
+        # Assert that the job status is still new
+        self.assertEqual(self.job.status, JobStatus.new)
+        self.assertIsNone(self.job.reason)
+
+        # Failure is logged
+        self.matching_service.logger.error.assert_called_with(
+            "Unexpected job runner failure: Out of memory\n"
+        )
+        self.assertTrue(
+            any(
+                call.args[0].startswith("Processed job")
+                for call in self.matching_service.logger.info.call_args_list
+            )
+        )
 
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_failure_exc(self, mock_run_job: MagicMock) -> None:
-        """Method run_next_job should update the Job in the DB if Job runner throws an exception."""
+        """Method run_next_job should throw if Job runner throws an exception."""
         mock_run_job.side_effect = ValueError("Out of memory exception")
 
-        self.matching_service.run_next_job()
+        with self.assertRaisesMessage(ValueError, "Out of memory exception"):
+            self.matching_service.run_next_job()
 
         # Refresh the job from the database to get updated status
         self.job.refresh_from_db()
 
-        # Assert that the job status is failed and the reason is saved
-        self.assertEqual(self.job.status, JobStatus.failed)
-        self.assertIn("Out of memory exception", str(self.job.reason))
+        # Assert that the job status is still new
+        self.assertEqual(self.job.status, JobStatus.new)
+        self.assertIsNone(self.job.reason)
 
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
     def test_run_next_job_success(self, mock_run_job: MagicMock) -> None:
-        """Method run_next_job should update the Job in the DB if Job runner succeeds in running the Job."""
+        """Method run_next_job should return if Job runner succeeds in running the Job."""
         mock_run_job.return_value = JobResult(0, None)
+        self.matching_service.logger = MagicMock()
 
         self.matching_service.run_next_job()
 
         # Refresh the job from the database to get updated status
         self.job.refresh_from_db()
 
-        # Assert that the job status is succeeded and the reason is None
-        self.assertEqual(self.job.status, JobStatus.succeeded)
+        # Assert that the job status is still new
+        self.assertEqual(self.job.status, JobStatus.new)
         self.assertIsNone(self.job.reason)
+
+        # Failure is not logged
+        self.assertFalse(
+            any(
+                call.args[0].startswith("Unexpected job runner failure")
+                for call in self.matching_service.logger.error.call_args_list
+            )
+        )
+        self.assertTrue(
+            any(
+                call.args[0].startswith("Processed job")
+                for call in self.matching_service.logger.info.call_args_list
+            )
+        )
 
 
 class MatchingServiceConcurrencyTestCase(TransactionTestCase):
@@ -106,8 +134,12 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             "s3://tuva-health-example/test", self.config.id
         )
 
-    def test_run_next_job_advisory_lock(self) -> None:
+    @patch("main.services.matching.matcher.logging.getLogger")
+    def test_run_next_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
         """Tests that only a single instance of run_next_job runs at a time."""
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
+
         delay1 = threading.Event()
         delay2 = threading.Event()
 
@@ -117,7 +149,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
         # run_job is called by run_next_job after the lock is obtained.
         # We mock the first instance so that we can ensure it's run first and also to introduce
         # an artificial delay.
-        def mock_run_job1(self: Any, job: Job) -> JobResult:
+        def mock_run_job1(self: Any) -> JobResult:
             nonlocal t1_exit
 
             # Signal that the MatchingService advisory lock should be held at this point
@@ -133,7 +165,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             return JobResult(return_code=0, error_message=None)
 
         # We mock the second instance so that we can verify it's run second.
-        def mock_run_job2(self: Any, job: Job) -> JobResult:
+        def mock_run_job2(self: Any) -> JobResult:
             nonlocal t2_entry
 
             t2_entry = time.time()
@@ -151,7 +183,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             "main.services.matching.matching_service.ProcessJobRunner.run_job",
             new=mock_run_job1,
         ):
-            t1 = threading.Thread(target=lambda: run_next_job())
+            t1 = threading.Thread(target=run_next_job)
 
             # Start MatchingService 1
             t1.start()
@@ -163,7 +195,7 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
                 "main.services.matching.matching_service.ProcessJobRunner.run_job",
                 new=mock_run_job2,
             ):
-                t2 = threading.Thread(target=lambda: run_next_job())
+                t2 = threading.Thread(target=run_next_job)
 
                 # Start MatchingService 2
                 t2.start()
@@ -185,6 +217,11 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
 
         # Both jobs should have succeeded
         self.job1.refresh_from_db()
-        self.assertEqual(self.job1.status, JobStatus.succeeded)
+        self.assertEqual(self.job1.status, JobStatus.new)
         self.job2.refresh_from_db()
-        self.assertEqual(self.job2.status, JobStatus.succeeded)
+        self.assertEqual(self.job2.status, JobStatus.new)
+
+        all_info_calls = [str(call.args[0]) for call in mock_logger.info.call_args_list]
+        job_finished_logs = [msg for msg in all_info_calls if "Processed job" in msg]
+
+        self.assertEqual(len(job_finished_logs), 2)

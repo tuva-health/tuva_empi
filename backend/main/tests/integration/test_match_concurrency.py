@@ -33,7 +33,7 @@ from main.services.matching.matcher import Matcher
 
 
 class MatchConcurrencyTestCase(TransactionTestCase):
-    """Tests concurrency properties between EMPIService.match_person_records and Matcher.process_job."""
+    """Tests concurrency properties between EMPIService.match_person_records and Matcher.process_next_job."""
 
     now: datetime = timezone.now()
     config: Config
@@ -231,7 +231,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         )
 
     def test_job_waits_on_match_person_records(self) -> None:
-        """Tests that if EMPIService.match_person_records holds the match advisory lock, then Matcher.process_job waits."""
+        """Tests that if EMPIService.match_person_records holds the match advisory lock, then Matcher.process_next_job waits."""
         delay1 = threading.Event()
         delay2 = threading.Event()
 
@@ -260,7 +260,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
 
             return True
 
-        # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the lock is
+        # Matcher.extract_current_results_with_lock is called by Matcher.process_next_job after the lock is
         # obtained. We mock it so that we can verify it's run second.
         def mock_extract_current_results_with_lock(
             self: Any, cursor: CursorWrapper, job: Job
@@ -280,10 +280,10 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        # Run Matcher.process_job and close DB connection
-        def process_job(job_id: int) -> None:
+        # Run Matcher.process_next_job and close DB connection
+        def process_next_job() -> None:
             try:
-                Matcher().process_job(job_id)
+                Matcher().process_next_job()
             finally:
                 connection.close()
 
@@ -303,7 +303,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
                 "main.services.matching.matcher.Matcher.extract_current_results_with_lock",
                 new=mock_extract_current_results_with_lock,
             ):
-                t2 = threading.Thread(target=lambda: process_job(self.job2.id))
+                t2 = threading.Thread(target=process_next_job)
 
                 # Start Matcher
                 t2.start()
@@ -327,13 +327,13 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.assertEqual(
             MatchEvent.objects.filter(type=MatchEventType.manual_match).count(), 1
         )
-        # Matcher.process_job should have succeeded
+        # Matcher.process_next_job should have succeeded
         self.assertEqual(
             MatchEvent.objects.filter(type=MatchEventType.auto_matches).count(), 1
         )
 
     def test_match_person_records_fails_when_job_runs(self) -> None:
-        """Tests that if Matcher.process_job holds the match advisory lock, then EMPIService.match_person_records throws.
+        """Tests that if Matcher.process_next_job holds the match advisory lock, then EMPIService.match_person_records throws.
 
         This is the same test as above, but reversed. match_person_records doesn't wait for Matcher to release the lock
         because it might wait for a long time in the request/response cycle.
@@ -344,7 +344,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         t1_exit: Optional[float] = None
         t2_entry: Optional[float] = None
 
-        # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the lock is
+        # Matcher.extract_current_results_with_lock is called by Matcher.process_next_job after the lock is
         # obtained. We mock it so that we can ensure it's run first and also to introduce an artificial
         # delay.
         def mock_extract_current_results_with_lock(
@@ -377,10 +377,10 @@ class MatchConcurrencyTestCase(TransactionTestCase):
 
             return True
 
-        # Run Matcher.process_job and close DB connection
-        def process_job(job_id: int) -> None:
+        # Run Matcher.process_next_job and close DB connection
+        def process_next_job() -> None:
             try:
-                Matcher().process_job(job_id)
+                Matcher().process_next_job()
             finally:
                 connection.close()
 
@@ -398,7 +398,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             "main.services.matching.matcher.Matcher.extract_current_results_with_lock",
             new=mock_extract_current_results_with_lock,
         ):
-            t1 = threading.Thread(target=lambda: process_job(self.job2.id))
+            t1 = threading.Thread(target=process_next_job)
 
             # Start Matcher
             t1.start()
@@ -427,7 +427,7 @@ class MatchConcurrencyTestCase(TransactionTestCase):
         self.assertIsNotNone(t1_exit)
         self.assertIsNone(t2_entry)
 
-        # Matcher.process_job should have succeeded
+        # Matcher.process_next_job should have succeeded
         self.assertEqual(
             MatchEvent.objects.filter(type=MatchEventType.auto_matches).count(), 1
         )

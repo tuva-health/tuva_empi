@@ -1,16 +1,18 @@
 import gc
 import logging
 from typing import (
+    Optional,
     TypedDict,
     cast,
 )
 
 import duckdb
 import pandas as pd
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.backends.utils import CursorWrapper
 from django.db.models import Field
-from django.forms.models import model_to_dict
+from django.forms import model_to_dict
+from django.utils import timezone
 from psycopg import sql
 from splink import DuckDBAPI, Linker  # type: ignore[import-untyped]
 
@@ -18,6 +20,7 @@ from main.models import (
     TIMESTAMP_FORMAT,
     DbLockId,
     Job,
+    JobStatus,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -507,6 +510,8 @@ class Matcher:
         num_records_loaded = self.load_person_records_with_persons(
             cursor, job, match_event, person_id_temp_table
         )
+
+        # TODO: Should we compare num_records_left with num_records_loaded?
 
         # Load PersonActions that represent the assignment of PersonRecords to Persons
         self.create_new_id_person_actions(cursor, job, match_event)
@@ -1709,95 +1714,163 @@ class Matcher:
     # Processing job
     #
 
-    def process_job(self, job_id: int) -> None:
-        with transaction.atomic(durable=True):
-            with connection.cursor() as cursor:
-                # Obtain (wait for) lock to prevent multiple Matchers from processing jobs at the same time.
-                # Jobs should be processed sequentially.
-                lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_job)
-                assert lock_acquired
+    def process_job(self, cursor: CursorWrapper, job: Job) -> None:
+        # Create new Persons for PersonRecordStaging rows with job ID.
+        # Then join those new Persons with the PersonRecordStaging rows to link
+        # the FK and insert into the PersonRecord table.
+        num_records_loaded = self.load_person_records(cursor, job)
 
-                try:
-                    job = Job.objects.get(id=job_id)
-                    self.logger.info("Processing job: %s", model_to_dict(job))
-                except Job.DoesNotExist:
-                    self.logger.exception("Job does not exist")
-                    # We want to throw, since the Matcher is run in it's own process and we want to return
-                    # a non-zero exit code if the Job fails.
-                    raise
+        if num_records_loaded == 0:
+            self.logger.info("Job finished")
+            return
 
-                # Create new Persons for PersonRecordStaging rows with job ID.
-                # Then join those new Persons with the PersonRecordStaging rows to link
-                # the FK and insert into the PersonRecord table.
-                num_records_loaded = self.load_person_records(cursor, job)
+        # Extract PersonRecord table to Pandas DF
+        person_record_df = self.extract_person_records(cursor)
 
-                if num_records_loaded == 0:
-                    self.logger.info("Job finished")
-                    return
+        # Run Splink prediction
+        new_result_df = self.run_splink_prediction(job, person_record_df)
 
-                # Extract PersonRecord table to Pandas DF
-                person_record_df = self.extract_person_records(cursor)
+        if new_result_df.empty:
+            self.logger.info("No new Splink prediction results")
+            self.logger.info("Job finished")
+            return
 
-                # Run Splink prediction
-                new_result_df = self.run_splink_prediction(job, person_record_df)
+        lock_acquired = obtain_advisory_lock(cursor, DbLockId.match_update)
+        assert lock_acquired
 
-                if new_result_df.empty:
-                    self.logger.info("No new Splink prediction results")
-                    self.logger.info("Job finished")
-                    return
+        # Lock and retrieve current SplinkResults
+        current_result_df = self.extract_current_results_with_lock(cursor, job)
 
-                lock_acquired = obtain_advisory_lock(cursor, DbLockId.match_update)
-                assert lock_acquired
+        # Concat current SplinkResults with new SplinkResults
+        splink_result_df = self.get_all_results(current_result_df, new_result_df)
 
-                # Lock and retrieve current SplinkResults
-                current_result_df = self.extract_current_results_with_lock(cursor, job)
+        # Lock and retrieve PersonRecord/Person rows related to current SplinkResults
+        person_crosswalk_df = self.extract_person_crosswalk_with_lock(
+            cursor, job, splink_result_df
+        )
 
-                # Concat current SplinkResults with new SplinkResults
-                splink_result_df = self.get_all_results(
-                    current_result_df, new_result_df
+        # Select a subset of columns for use in matching below
+        result_partial_df = splink_result_df[
+            [
+                "row_number",
+                "match_probability",
+                "person_record_l_id",
+                "person_record_r_id",
+            ]
+        ]
+
+        # Generate ResultGroupPartialDict objects, MatchGroupPartialDict objects and auto-match
+        # actions
+        match_graph = MatchGraph(result_partial_df, person_crosswalk_df)
+        match_analysis = match_graph.analyze_graph(job.config.auto_match_threshold)
+
+        # Create Match Event
+        match_event = self.create_match_event(cursor, job, MatchEventType.auto_matches)
+
+        # Load SplinkResult, MatchGroup an MatchGroupAction rows
+        self.load_results_groups_and_actions(
+            cursor,
+            job,
+            match_event,
+            splink_result_df,
+            match_analysis["results"],
+            match_analysis["match_groups"],
+        )
+
+        # Update Person membership based on auto-matches and load PersonActions related to
+        # 'auto-matches'
+        self.update_persons_and_load_actions(
+            cursor, job, match_event, match_analysis["person_actions"]
+        )
+
+        self.logger.info("Job finished")
+
+    def update_job_success(self, job: Job) -> None:
+        self.logger.info(f"Job {job.id} succeeded")
+        updated_count = Job.objects.filter(id=job.id).update(
+            status=JobStatus.succeeded, updated=timezone.now(), reason=None
+        )
+        if updated_count != 1:
+            raise Exception(
+                f"Failed to update job status for job {job.id}."
+                f" Expected to update 1 row, but updated {updated_count}"
+            )
+
+    def update_job_failure(self, job: Job, reason: str) -> None:
+        self.logger.error(f"Job {job.id} failed: {reason}")
+        updated_count = Job.objects.filter(id=job.id).update(
+            status=JobStatus.failed,
+            updated=timezone.now(),
+            reason=f"Error: {reason}",
+        )
+        if updated_count != 1:
+            raise Exception(
+                f"Failed to update job status for job {job.id}."
+                f" Expected to update 1 row, but updated {updated_count}"
+            )
+
+    def delete_staging_records(self, job: Job) -> None:
+        self.logger.info(f"Deleting staging records with job ID {job.id}")
+        deleted_count, _ = PersonRecordStaging.objects.filter(job_id=job.id).delete()
+        self.logger.info(
+            f"Deleted {deleted_count} staging records with job ID {job.id}"
+        )
+
+    def process_next_job(self) -> None:
+        job: Optional[Job] = None
+
+        try:
+            with transaction.atomic(durable=True):
+                with connection.cursor() as cursor:
+                    # Obtain (wait for) lock to prevent multiple Matchers from processing jobs at the
+                    # same time. Jobs should be processed sequentially.
+                    lock_acquired = obtain_advisory_lock(cursor, DbLockId.matching_job)
+                    assert lock_acquired
+
+                    self.logger.info("Checking for new jobs")
+
+                    job = (
+                        Job.objects.select_for_update()
+                        .filter(status=JobStatus.new)
+                        .order_by("id")
+                        .first()
+                    )
+
+                    if not job:
+                        self.logger.info("No new jobs found")
+                        return
+
+                    self.logger.info("Found job: %s", model_to_dict(job))
+
+                    try:
+                        self.process_job(cursor, job)
+                        self.update_job_success(job)
+                        self.delete_staging_records(job)
+
+                    # DatabaseError always causes the transaction to be rolled back.
+                    # So we raise it and catch it outside the transaction.
+                    # https://docs.djangoproject.com/en/5.2/topics/db/transactions/#controlling-transactions-explicitly
+                    except DatabaseError:
+                        raise
+                    except Exception as e:
+                        self.logger.exception(
+                            f"Unexpected error while processing next Job {job.id if job else None}: {e}"
+                        )
+                        if job:
+                            self.update_job_failure(job, str(e))
+                            self.delete_staging_records(job)
+                        else:
+                            self.logger.info(
+                                "No current Job, skipping Job failure status update and staging records cleanup"
+                            )
+        except DatabaseError as e:
+            self.logger.exception(
+                f"Unexpected database error while processing next Job {job.id if job else None}: {e}"
+            )
+            if job:
+                self.update_job_failure(job, str(e))
+                self.delete_staging_records(job)
+            else:
+                self.logger.info(
+                    "No current Job, skipping Job failure status update and staging records cleanup"
                 )
-
-                # Lock and retrieve PersonRecord/Person rows related to current SplinkResults
-                person_crosswalk_df = self.extract_person_crosswalk_with_lock(
-                    cursor, job, splink_result_df
-                )
-
-                # Select a subset of columns for use in matching below
-                result_partial_df = splink_result_df[
-                    [
-                        "row_number",
-                        "match_probability",
-                        "person_record_l_id",
-                        "person_record_r_id",
-                    ]
-                ]
-
-                # Generate ResultGroupPartialDict objects, MatchGroupPartialDict objects and auto-match
-                # actions
-                match_graph = MatchGraph(result_partial_df, person_crosswalk_df)
-                match_analysis = match_graph.analyze_graph(
-                    job.config.auto_match_threshold
-                )
-
-                # Create Match Event
-                match_event = self.create_match_event(
-                    cursor, job, MatchEventType.auto_matches
-                )
-
-                # Load SplinkResult, MatchGroup an MatchGroupAction rows
-                self.load_results_groups_and_actions(
-                    cursor,
-                    job,
-                    match_event,
-                    splink_result_df,
-                    match_analysis["results"],
-                    match_analysis["match_groups"],
-                )
-
-                # Update Person membership based on auto-matches and load PersonActions related to
-                # 'auto-matches'
-                self.update_persons_and_load_actions(
-                    cursor, job, match_event, match_analysis["person_actions"]
-                )
-
-                self.logger.info("Job finished")
