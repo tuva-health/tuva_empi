@@ -1863,6 +1863,7 @@ class Matcher:
                             self.logger.info(
                                 "No current Job, skipping Job failure status update and staging records cleanup"
                             )
+                            raise
         except DatabaseError as e:
             self.logger.exception(
                 f"Unexpected database error while processing next Job {job.id if job else None}: {e}"
@@ -1874,3 +1875,4 @@ class Matcher:
                 self.logger.info(
                     "No current Job, skipping Job failure status update and staging records cleanup"
                 )
+                raise
