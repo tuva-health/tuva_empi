@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -28,6 +29,22 @@ class GetPersonsRequest(Serializer):
     data_source = serializers.CharField(required=False)
 
 
+class PersonSummarySerializer(Serializer):
+    id = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    data_sources = serializers.ListField(child=serializers.CharField())
+
+
+class GetPersonsResponse(Serializer):
+    persons = PersonSummarySerializer(many=True)
+
+
+@extend_schema(
+    summary="Retrieve persons",
+    request=GetPersonsRequest,
+    responses={200: GetPersonsResponse},
+)
 @api_view(["GET"])
 def get_persons(request: Request) -> Response:
     """Get/search for persons."""
@@ -70,6 +87,45 @@ class GetPersonRequest(Serializer):
             raise serializers.ValidationError("Invalid Person ID")
 
 
+class PersonRecordSerializer(Serializer):
+    id = serializers.CharField()
+    person_id = serializers.CharField()
+    created = serializers.DateTimeField()
+    person_updated = serializers.DateTimeField()
+    matched_or_reviewed = serializers.BooleanField()
+    data_source = serializers.CharField()
+    source_person_id = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    sex = serializers.CharField()
+    race = serializers.CharField()
+    birth_date = serializers.CharField()
+    death_date = serializers.CharField()
+    social_security_number = serializers.CharField()
+    address = serializers.CharField()
+    city = serializers.CharField()
+    state = serializers.CharField()
+    zip_code = serializers.CharField()
+    county = serializers.CharField()
+    phone = serializers.CharField()
+
+
+class PersonDetailSerializer(Serializer):
+    id = serializers.CharField()
+    created = serializers.DateTimeField()
+    version = serializers.IntegerField()
+    records = PersonRecordSerializer(many=True)
+
+
+class GetPersonResponse(Serializer):
+    person = PersonDetailSerializer()
+
+
+@extend_schema(
+    summary="Retrieve person by ID",
+    request=GetPersonRequest,
+    responses={200: GetPersonResponse},
+)
 @api_view(["GET"])
 def get_person(request: Request, id: int) -> Response:
     """Get Person by ID."""

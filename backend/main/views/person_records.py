@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -48,6 +49,15 @@ class ImportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
             raise serializers.ValidationError("Invalid Config ID")
 
 
+class ImportPersonRecordsResponse(Serializer):
+    job_id = serializers.CharField()
+
+
+@extend_schema(
+    summary="Import person records",
+    request=ImportPersonRecordsRequest,
+    responses={200: ImportPersonRecordsResponse},
+)
 @api_view(["POST"])
 def import_person_records(request: Request) -> Response:
     """Import person records from an S3 object."""
@@ -79,6 +89,17 @@ class ExportPersonRecordsRequest(S3URIValidatorMixin, Serializer):
     s3_uri = serializers.CharField()
 
 
+@extend_schema(
+    summary="Export person records",
+    request=ExportPersonRecordsRequest,
+    responses={
+        200: {
+            "type": "object",
+            "description": "Empty object",
+            "properties": {},
+        }
+    },
+)
 @api_view(["POST"])
 def export_person_records(request: Request) -> Response:
     """Export person records to S3 in CSV format."""

@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -16,6 +17,7 @@ from main.util.object_id import (
     remove_prefix,
 )
 from main.views.errors import error_data
+from main.views.persons import PersonDetailSerializer
 from main.views.serializer import Serializer
 
 
@@ -28,6 +30,23 @@ class GetPotentialMatchesRequest(Serializer):
     data_source = serializers.CharField(required=False)
 
 
+class PotentialMatchSummarySerializer(Serializer):
+    id = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    data_sources = serializers.ListField(child=serializers.CharField())
+    max_match_probability = serializers.FloatField()
+
+
+class GetPotentialMatchesResponse(Serializer):
+    potential_matches = PotentialMatchSummarySerializer(many=True)
+
+
+@extend_schema(
+    summary="Retrieve potential matches",
+    request=GetPotentialMatchesRequest,
+    responses={200: GetPotentialMatchesResponse},
+)
 @api_view(["GET"])
 def get_potential_matches(request: Request) -> Response:
     """Get/search for potential matches."""
@@ -70,6 +89,33 @@ class GetPotentialMatchRequest(Serializer):
             raise serializers.ValidationError("Invalid PotentialMatch ID")
 
 
+class PredictionResultSerializer(Serializer):
+    id = serializers.CharField()
+    created = serializers.DateTimeField()
+    match_probability = serializers.FloatField()
+    person_record_l_id = serializers.CharField()
+    person_record_r_id = serializers.CharField()
+
+
+class PotentialMatchDetailSerializer(Serializer):
+    id = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    data_sources = serializers.ListField(child=serializers.CharField())
+    max_match_probability = serializers.FloatField()
+    results = PredictionResultSerializer(many=True)
+    persons = PersonDetailSerializer(many=True)
+
+
+class GetPotentialMatchResponse(Serializer):
+    potential_match = PotentialMatchDetailSerializer()
+
+
+@extend_schema(
+    summary="Retrieve potential match by ID",
+    request=GetPotentialMatchRequest,
+    responses={200: GetPotentialMatchResponse},
+)
 @api_view(["GET"])
 def get_potential_match(request: Request, id: int) -> Response:
     """Get PotentialMatch by ID."""
