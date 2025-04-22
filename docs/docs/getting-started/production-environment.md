@@ -16,13 +16,13 @@ We produce two OCI images, one for the frontend and one for the backend:
 
 ### Frontend
 
-Repo: https://github.com/tuva-health/tuva_empi/pkgs/container/tuva_empi-frontend
+Repo: https://github.com/tuva-health/tuva_empi/pkgs/container/tuva-empi-frontend
 
 The frontend image runs the frontend NextJS application, listening on port 3000. It doesn't support any parameters at the moment.
 
 ### Backend
 
-Repo: https://github.com/tuva-health/tuva_empi/pkgs/container/tuva_empi-backend
+Repo: https://github.com/tuva-health/tuva_empi/pkgs/container/tuva-empi-backend
 
 The backend image contains the entire Tuva EMPI backend which includes the API, matching service, migrations and bootstrapping. The API listens on port 8000.
 
