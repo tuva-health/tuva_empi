@@ -16,7 +16,7 @@ def get_config() -> None:
     print("Attempting to pull config from AWS Secrets Manager")
 
     secret = SecretsManagerClient().get_secret(
-        os.environ["TUVA_EMPI_CONFIG_SECRET_ARN"]
+        os.environ["TUVA_EMPI_CONFIG_AWS_SECRET_ARN"]
     )
 
     try:
