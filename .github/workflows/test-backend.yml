@@ -30,7 +30,7 @@ jobs:
         ports:
           - 5432:5432
     env:
-      CONFIG_FILE: config/ci.json
+      TUVA_EMPI_CONFIG_FILE: config/ci.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
