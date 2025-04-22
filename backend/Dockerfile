@@ -4,13 +4,18 @@ FROM python:3.13.1-bookworm@sha256:3b1b63f17c5197411ee572be110333dae4b9d6f2fbc4f
 SHELL ["/bin/bash", "-c"]
 
 RUN apt update && apt upgrade -y
+RUN mkdir -p /usr/local/lib/tuva-empi /usr/local/etc/tuva-empi
 
-COPY . /app
+WORKDIR /usr/local/lib/tuva-empi
 
-WORKDIR /app
+COPY ./requirements.txt requirements.txt
 
-RUN make install
+RUN pip install -r requirements.txt
+
+COPY . .
+
+RUN chmod +x tuva-empi-backend
 
 EXPOSE 8000
-
-CMD ["make", "configure-and-run"]
+ENTRYPOINT ["./tuva-empi-backend"]
+CMD ["api"]
