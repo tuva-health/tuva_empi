@@ -1,8 +1,8 @@
 {
   "label": "Contribute",
-  "position": 0,
+  "position": 5,
   "link": {
     "type": "doc",
-    "id": "contribute/index"
+    "id": "contribute/overview"
   }
 }

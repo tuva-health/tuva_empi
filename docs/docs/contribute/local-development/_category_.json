@@ -1,8 +1,4 @@
 {
   "label": "Local Development",
-  "position": 1,
-  "link": {
-    "type": "doc",
-    "id": "local-development/index"
-  }
+  "position": 1
 }
