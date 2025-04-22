@@ -1,9 +1,14 @@
+from enum import Enum
+
 from django.contrib.postgres.functions import TransactionNow
 from django.db import models
 
-MATCHING_SERVICE_LOCK_ID = 100
-MATCHING_JOB_LOCK_ID = 200
-MATCH_UPDATE_LOCK_ID = 300
+
+class DbLockId(Enum):
+    matching_service = 100
+    matching_job = 200
+    match_update = 300
+
 
 TIMESTAMP_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.USTZH:TZM'
 
@@ -123,7 +128,9 @@ class PersonRecord(models.Model):
     person = models.ForeignKey(Person, on_delete=models.DO_NOTHING)
     person_updated = models.DateTimeField()
     matched_or_reviewed = models.DateTimeField(null=True)
-    sha256 = models.BinaryField()
+    sha256 = models.BinaryField(
+        unique=True
+    )  # unique implies that a btree index is created
     data_source = models.TextField()
     source_person_id = models.TextField()
     first_name = models.TextField()
@@ -142,7 +149,6 @@ class PersonRecord(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["sha256"]),
             models.Index(fields=["data_source"]),
         ]
 

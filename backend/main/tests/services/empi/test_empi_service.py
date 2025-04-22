@@ -1,11 +1,13 @@
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from datetime import timezone as tz
 from typing import Any, Iterator, Mapping, Optional, cast
 from unittest.mock import patch
 
+from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone as django_tz
 
@@ -34,6 +36,7 @@ from main.services.empi.empi_service import (
     InvalidPotentialMatch,
     PersonDict,
     PersonRecordDict,
+    PersonRecordIdsWithUUIDPartialDict,
     PersonSummaryDict,
     PersonUpdateDict,
     PotentialMatchDict,
@@ -235,7 +238,6 @@ class GetDataSourcesTestCase(TestCase):
             "person_id": person.id,
             "person_updated": now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "first_name": "test-first-name",
             "last_name": "test-last-name",
@@ -252,9 +254,15 @@ class GetDataSourcesTestCase(TestCase):
             "phone": "0000000",
         }
 
-        PersonRecord.objects.create(**common_person_record, data_source="ds1")
-        PersonRecord.objects.create(**common_person_record, data_source="ds2")
-        PersonRecord.objects.create(**common_person_record, data_source="ds1")
+        PersonRecord.objects.create(
+            **common_person_record, sha256=b"test-sha256-1", data_source="ds1"
+        )
+        PersonRecord.objects.create(
+            **common_person_record, sha256=b"test-sha256-2", data_source="ds2"
+        )
+        PersonRecord.objects.create(
+            **common_person_record, sha256=b"test-sha256-3", data_source="ds1"
+        )
 
     def test_get_data_sources(self) -> None:
         """Tests that get_data_sources correctly retrieves unique data sources."""
@@ -319,7 +327,6 @@ class PotentialMatchesTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -385,6 +392,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record1 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -392,6 +400,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Smith",
@@ -399,6 +408,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record3 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -406,6 +416,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record4 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
@@ -413,6 +424,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record5 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person5.id,
+            sha256=b"test-sha256-5",
             data_source="ds5",
             first_name="Tina",
             last_name="Smith",
@@ -420,6 +432,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record6 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person6.id,
+            sha256=b"test-sha256-6",
             data_source="ds6",
             first_name="Tom",
             last_name="Rom",
@@ -791,6 +804,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_a = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_a.id,
+            sha256=b"test-sha256-a",
             data_source="ds_test_a",
             first_name="TestA",
             last_name="MatchTest",
@@ -799,6 +813,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_b = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_b.id,
+            sha256=b"test-sha256-b",
             data_source="ds_test_b",
             first_name="TestB",
             last_name="MatchTest",
@@ -875,6 +890,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_a = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_a.id,
+            sha256=b"test-sha256-a",
             data_source="ds_low_a",
             first_name="LowProb",
             last_name="Test",
@@ -883,6 +899,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         person_record_b = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=person_b.id,
+            sha256=b"test-sha256-b",
             data_source="ds_low_b",
             first_name="LowProb",
             last_name="Test",
@@ -970,6 +987,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person6.id,
+            sha256=b"test-sha256-7",
             data_source="ds7",
             first_name="Jerry",
             last_name="Berry",
@@ -1412,7 +1430,6 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -1478,6 +1495,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record1 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -1486,6 +1504,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Smith",
@@ -1494,6 +1513,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record3 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -1501,6 +1521,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record4 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
@@ -1508,6 +1529,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record5 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person5.id,
+            sha256=b"test-sha256-5",
             data_source="ds5",
             first_name="Tina",
             last_name="Smith",
@@ -1515,6 +1537,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.person_record6 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person6.id,
+            sha256=b"test-sha256-6",
             data_source="ds6",
             first_name="Tom",
             last_name="Rom",
@@ -2421,6 +2444,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record7 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-7",
             data_source="ds7",
             first_name="Jerry",
             last_name="Berry",
@@ -2428,6 +2452,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record8 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-8",
             data_source="ds8",
             first_name="Larry",
             last_name="Dairy",
@@ -2435,6 +2460,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record9 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-9",
             data_source="ds9",
             first_name="Simone",
             last_name="Limone",
@@ -2442,6 +2468,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         person_record10 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person4.id,
+            sha256=b"test-sha256-10",
             data_source="ds10",
             first_name="Stacy",
             last_name="Lacy",
@@ -3236,7 +3263,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
         self.match_group1.save()
 
         with self.assertRaisesMessage(
-            InvalidPotentialMatch, "Potential has already been matched"
+            InvalidPotentialMatch, "Potential match has already been matched"
         ):
             self.empi.match_person_records(match["id"], match["version"], [], self.user)
 
@@ -3388,6 +3415,366 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             )
 
 
+class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
+    """Tests concurrency properties of match_person_records."""
+
+    now: datetime
+    config: Config
+    job: Job
+    person1: Person
+    person2: Person
+    person_record1: PersonRecord
+    person_record2: PersonRecord
+    match_group1: MatchGroup
+    match_group2: MatchGroup
+    result1: SplinkResult
+    result2: SplinkResult
+    user: User
+
+    def setUp(self) -> None:
+        self.now = django_tz.now()
+        self.config = EMPIService().create_config(
+            {
+                "splink_settings": {},
+                "potential_match_threshold": 0.001,
+                "auto_match_threshold": 0.0013,
+            }
+        )
+        self.job = EMPIService().create_job(
+            "s3://tuva-health-example/test", self.config.id
+        )
+
+        common_person_record = {
+            "created": self.now,
+            "job_id": self.job.id,
+            "person_updated": self.now,
+            "matched_or_reviewed": None,
+            "source_person_id": "a1",
+            "sex": "F",
+            "race": "test-race",
+            "birth_date": "1900-01-01",
+            "death_date": "3000-01-01",
+            "social_security_number": "000-00-0000",
+            "address": "1 Test Address",
+            "city": "Test City",
+            "state": "AA",
+            "zip_code": "00000",
+            "county": "Test County",
+            "phone": "0000000",
+        }
+
+        self.person1 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person2 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person3 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+        self.person4 = Person.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            record_count=1,
+        )
+
+        self.person_record1 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person1.id,
+            sha256=b"test-sha256-1",
+            data_source="ds1",
+            first_name="John",
+            last_name="Doe",
+        )
+        self.person_record2 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person2.id,
+            sha256=b"test-sha256-2",
+            data_source="ds2",
+            first_name="Jane",
+            last_name="Smith",
+        )
+        self.person_record3 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person3.id,
+            sha256=b"test-sha256-3",
+            data_source="ds3",
+            first_name="Paul",
+            last_name="Lap",
+        )
+        self.person_record4 = PersonRecord.objects.create(
+            **common_person_record,
+            person_id=self.person4.id,
+            sha256=b"test-sha256-4",
+            data_source="ds4",
+            first_name="Linda",
+            last_name="Love",
+        )
+
+        self.match_group1 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result1 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group1.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record1.id,
+            person_record_r_id=self.person_record2.id,
+            data={},
+        )
+
+        self.match_group2 = MatchGroup.objects.create(
+            uuid=uuid.uuid4(),
+            created=self.now,
+            updated=self.now,
+            job_id=self.job.id,
+            version=1,
+            matched=None,
+            deleted=None,
+        )
+        self.result2 = SplinkResult.objects.create(
+            created=self.now,
+            job_id=self.job.id,
+            match_group_id=self.match_group2.id,
+            match_group_updated=self.now,
+            match_probability=0.95,
+            match_weight=0.95,
+            person_record_l_id=self.person_record3.id,
+            person_record_r_id=self.person_record4.id,
+            data={},
+        )
+        self.user = User.objects.create()
+
+    def test_concurrent_match_same_match_group(self) -> None:
+        """Tests that if match_person_records holds the MatchGroup row lock, then another instance of match_person_records (with the same MatchGroup) waits."""
+        delay1 = threading.Event()
+        delay2 = threading.Event()
+
+        t1_exit: Optional[float] = None
+        t2_entry: Optional[float] = None
+
+        # validate_update_records is called by match_person_records after the lock is obtained.
+        # We mock the first instance so that we can ensure it's run first and also to introduce
+        # an artificial delay.
+        def mock_validate_update_records_1(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t1_exit
+
+            # Signal that the MatchGroup row lock should be held at this point
+            delay1.set()
+            # Wait for EMPIService 2 to try to obtain the lock
+            delay2.wait()
+
+            t1_exit = time.time()
+
+            # Add delay so that we can verify the lock is being held
+            time.sleep(3)
+
+            return True
+
+        # We mock the second instance so that we can verify it's run second.
+        def mock_validate_update_records_2(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t2_entry
+
+            t2_entry = time.time()
+
+            return True
+
+        # Run match_person_records and close DB connection
+        def match_person_records_1() -> None:
+            try:
+                EMPIService().match_person_records(
+                    self.match_group1.id, self.match_group1.version, [], self.user
+                )
+            finally:
+                connection.close()
+
+        # Run match_person_records and close DB connection
+        def match_person_records_2() -> None:
+            try:
+                with self.assertRaisesMessage(
+                    InvalidPotentialMatch, "Potential match has already been matched"
+                ):
+                    EMPIService().match_person_records(
+                        self.match_group1.id, self.match_group1.version, [], self.user
+                    )
+            finally:
+                connection.close()
+
+        with patch(
+            "main.services.empi.empi_service.EMPIService.validate_update_records",
+            new=mock_validate_update_records_1,
+        ):
+            t1 = threading.Thread(target=match_person_records_1)
+
+            # Start EMPIService 1
+            t1.start()
+
+            # Wait until EMPIService 1 obtains the lock
+            delay1.wait()
+
+            with patch(
+                "main.services.empi.empi_service.EMPIService.validate_update_records",
+                new=mock_validate_update_records_2,
+            ):
+                t2 = threading.Thread(target=match_person_records_2)
+
+                # Start EMPIService 2
+                t2.start()
+
+                # Add delay to ensure EMPIService 2 has reached the lock
+                time.sleep(2)
+
+                # Signal to allow EMPIService 1 to finish and EMPIService 2 to start
+                delay2.set()
+
+                t1.join()
+                t2.join()
+
+        self.assertIsNotNone(t1_exit)
+        self.assertIsNone(t2_entry)
+
+        # Only EMPIService 1 should have succeeded
+        self.assertEqual(
+            MatchEvent.objects.filter(type=MatchEventType.manual_match).count(), 1
+        )
+
+    def test_concurrent_match_different_match_groups(self) -> None:
+        """Tests that if match_person_records holds the MatchGroup row lock, then another instance of match_person_records (with the a different MatchGroup) can proceed concurrently."""
+        delay1 = threading.Event()
+        delay2 = threading.Event()
+
+        t1_exit: Optional[float] = None
+        t2_entry: Optional[float] = None
+
+        # validate_update_records is called by match_person_records after the lock is obtained.
+        # We mock the first instance so that we can ensure it's run first and also to introduce
+        # an artificial delay.
+        def mock_validate_update_records_1(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t1_exit
+
+            # Signal that the MatchGroup row lock should be held at this point
+            delay1.set()
+            # Wait for EMPIService 2 to try to obtain the lock
+            delay2.wait()
+
+            t1_exit = time.time()
+
+            # Add delay so that we can verify the lock is being held
+            time.sleep(3)
+
+            return True
+
+        # We mock the second instance so that we can verify it's run second.
+        def mock_validate_update_records_2(
+            self: Any,
+            person_updates: list[PersonUpdateDict],
+            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
+        ) -> bool:
+            nonlocal t2_entry
+
+            t2_entry = time.time()
+
+            return True
+
+        # Run match_person_records and close DB connection
+        def match_person_records_1() -> None:
+            try:
+                EMPIService().match_person_records(
+                    self.match_group1.id, self.match_group1.version, [], self.user
+                )
+            finally:
+                connection.close()
+
+        # Run match_person_records and close DB connection
+        def match_person_records_2() -> None:
+            try:
+                EMPIService().match_person_records(
+                    self.match_group2.id, self.match_group2.version, [], self.user
+                )
+            finally:
+                connection.close()
+
+        with patch(
+            "main.services.empi.empi_service.EMPIService.validate_update_records",
+            new=mock_validate_update_records_1,
+        ):
+            t1 = threading.Thread(target=match_person_records_1)
+
+            # Start EMPIService 1
+            t1.start()
+
+            # Wait until EMPIService 1 obtains the lock
+            delay1.wait()
+
+            with patch(
+                "main.services.empi.empi_service.EMPIService.validate_update_records",
+                new=mock_validate_update_records_2,
+            ):
+                t2 = threading.Thread(target=match_person_records_2)
+
+                # Start EMPIService 2
+                t2.start()
+
+                # Add delay to ensure EMPIService 2 has reached the lock
+                time.sleep(2)
+
+                # Signal to allow EMPIService 1 to finish and EMPIService 2 to start
+                delay2.set()
+
+                t1.join()
+                t2.join()
+
+        self.assertIsNotNone(t1_exit)
+        self.assertIsNotNone(t2_entry)
+
+        # EMPIService 2 should have started around the same time as EMPIService 1
+        self.assertLess(cast(float, t2_entry) - cast(float, t1_exit), 1)
+
+        # Both instances should have succeeded
+        self.assertEqual(
+            MatchEvent.objects.filter(type=MatchEventType.manual_match).count(), 2
+        )
+
+
 class PersonsTestCase(TransactionTestCase):
     empi: EMPIService
     now: datetime
@@ -3422,7 +3809,6 @@ class PersonsTestCase(TransactionTestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "source_person_id": "a1",
             "sex": "F",
             "race": "test-race",
@@ -3464,6 +3850,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="ds1",
             first_name="John",
             last_name="Doe",
@@ -3472,6 +3859,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="ds2",
             first_name="Jane",
             last_name="Lane",
@@ -3479,6 +3867,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-3",
             data_source="ds3",
             first_name="Paul",
             last_name="Lap",
@@ -3486,6 +3875,7 @@ class PersonsTestCase(TransactionTestCase):
         PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person3.id,
+            sha256=b"test-sha256-4",
             data_source="ds4",
             first_name="Linda",
             last_name="Love",
@@ -3956,7 +4346,6 @@ class ExportPersonRecordsTestCase(TestCase):
             "job_id": self.job.id,
             "person_updated": self.now,
             "matched_or_reviewed": None,
-            "sha256": b"test-sha256",
             "race": "W",
         }
 
@@ -3980,6 +4369,7 @@ class ExportPersonRecordsTestCase(TestCase):
         self.person_record1 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person1.id,
+            sha256=b"test-sha256-1",
             data_source="test1",
             source_person_id="1",
             first_name="John",
@@ -3999,6 +4389,7 @@ class ExportPersonRecordsTestCase(TestCase):
         self.person_record2 = PersonRecord.objects.create(
             **self.common_person_record,
             person_id=self.person2.id,
+            sha256=b"test-sha256-2",
             data_source="test2",
             source_person_id="2",
             first_name="Jane",
