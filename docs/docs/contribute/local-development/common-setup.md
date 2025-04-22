@@ -6,6 +6,8 @@ hide_table_of_contents: true
 sidebar_position: 1
 ---
 
+# Tuva EMPI Common Setup
+
 ## Development
 
 ### Installation

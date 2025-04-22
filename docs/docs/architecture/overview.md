@@ -1,3 +1,11 @@
+---
+id: overview
+title: "Architecture"
+hide_title: true
+hide_table_of_contents: true
+sidebar_position: 1
+---
+
 # Architecture
 
 ## Core

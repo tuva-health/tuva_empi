@@ -3,7 +3,7 @@ id: configuration
 title: "Configuration"
 hide_title: true
 hide_table_of_contents: true
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 # Configuration
