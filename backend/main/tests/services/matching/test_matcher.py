@@ -2568,7 +2568,9 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         self.job1.refresh_from_db()
         self.assertEqual(self.job1.status, JobStatus.failed)
         self.assertEqual(self.job1.reason, "Error: Test error")
-        self.assertLess(self.job1.updated, datetime.fromtimestamp(t1_exit, tz=tz.utc))
+        self.assertLess(
+            self.job1.updated, datetime.fromtimestamp(cast(float, t1_exit), tz=tz.utc)
+        )
 
         self.job2.refresh_from_db()
         self.assertEqual(self.job2.status, JobStatus.new)
