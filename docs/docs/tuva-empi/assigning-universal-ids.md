@@ -3,7 +3,7 @@ id: uuid
 title: "Assigning Universal IDs"
 hide_title: true
 hide_table_of_contents: true
-sidebar_position: 1
+sidebar_position: 2
 ---
 
 # Assigning Universal IDs
@@ -25,7 +25,7 @@ and determine if any given pair of records corresponds to the same
 real-world person. This may be done in a deterministic way or in a probabilistic
 way.
 
-For instance, one may come up with deterministic rules:  when
+For instance, one may come up with deterministic rules: when
 certain criteria are met, a given pair of records is determined to correspond
 to the same real-world person. This gives rise to a binary result: any given
 pair of records either corresponds to the same real-world person (when
@@ -38,9 +38,9 @@ the two records are determined to belong to different real-world people.
 
 Another approach is to use a probabilistic approach when comparing any given
 pair of records. The problem is reduced to creating a
-function _F_ that takes two patient records 
+function _F_ that takes two patient records
 as inputs and
-returns the probability that those two records correspond to the same real-world person: 
+returns the probability that those two records correspond to the same real-world person:
 
 _F(R1, R2) = P_,
 
@@ -61,9 +61,9 @@ walking through how to setup your Splink model, but the
 most important key ideas to get started are the following:
 
 - Start with [exploratory analysis](https://moj-analytical-services.github.io/splink/demos/tutorials/02_Exploratory_analysis.html) on your data. Remove fields with a high percentage
-of null values from your analysis. Look out for fields that have a large skew in
-their distribution of values; for such fields it might be helpful to use
-`term_frequency_adjustments` to improve the peformance of your model.
+  of null values from your analysis. Look out for fields that have a large skew in
+  their distribution of values; for such fields it might be helpful to use
+  `term_frequency_adjustments` to improve the peformance of your model.
 
 - Choose blocking rules to optimize runtimes. We could compare every possible
   pair of records in our raw data and calculate the probability that each
@@ -97,6 +97,7 @@ need next is an algorithm that can link together all records that are connected
 to each other through a chain of high probabilites into a single person identity
 and assign all those records a common person_id. For example, the table above
 tells us that:
+
 - Record A and record B represent the same real-world person with 90% probability
 - Record B and record C represent the same real-world person with 95% probability
 - Record C and record D represent the same real-world person with 97% probability
@@ -104,10 +105,11 @@ tells us that:
 ![](/img/person.png)
 
 We need an algorithm that can:
+
 - Traverse this chain of linked records and determine that
-records A, B, and C all represent the same real-world person.
+  records A, B, and C all represent the same real-world person.
 - Create a new universal patient identifier (`person_id`) and assign it
-to the new person identity composed of records A, B, and C.
+  to the new person identity composed of records A, B, and C.
 
 Mathematically, what is happening here is that we are using an equivalence
 relation (i.e. the relation of two records having high probability of
@@ -128,15 +130,15 @@ Tuva EMPI comes with a UI where a user can do this.
 Two types of matches can happen with Tuva EMPI:
 
 - Auto-matches: These are groups of records that are determined to represent
-the same real-world person with high probability,
-so they are automatically given
-the same `person_id`.
+  the same real-world person with high probability,
+  so they are automatically given
+  the same `person_id`.
 
 - Potential-matches: These are groups of records that could potentially
-represent the same real-world person, but the probability of this being the
-case is not high enough to justify automatically linking the records, therefore
-a human-in-the-loop must review this potential match before the records
-are linked into a single person identity.
+  represent the same real-world person, but the probability of this being the
+  case is not high enough to justify automatically linking the records, therefore
+  a human-in-the-loop must review this potential match before the records
+  are linked into a single person identity.
 
 Users of Tuva EMPI can review both auto-matches and potential-matches
 and they can edit persons by easily dragging and dropping records
