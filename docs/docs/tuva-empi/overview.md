@@ -1,13 +1,10 @@
 ---
-id: tuva-empi
-title: "Tuva EMPI Overview"
+id: overview
+title: "Overview"
 hide_title: true
 hide_table_of_contents: true
-slug: /
-sidebar_position: 0
+sidebar_position: 1
 ---
-
-
 
 # Tuva EMPI Overview
 
@@ -118,40 +115,40 @@ from the Tuva Input Layer:
 
 <pre>
 ```sql
-select distinct  
-  member_id as source_person_id, 
-  data_source, 
-  first_name, 
-  last_name, 
-  gender as sex, 
-  race, 
-  birth_date, 
-  death_date, 
-  social_security_number, 
-  address, 
-  city, 
-  state, 
-  zip_code, 
-  phone 
-from tuva.input_layer.eligibility  
+select distinct
+  member_id as source_person_id,
+  data_source,
+  first_name,
+  last_name,
+  gender as sex,
+  race,
+  birth_date,
+  death_date,
+  social_security_number,
+  address,
+  city,
+  state,
+  zip_code,
+  phone
+from tuva.input_layer.eligibility
 
-union all  
+union all
 
-select distinct  
-  patient_id as source_person_id, 
-  data_source, 
-  first_name, 
-  last_name, 
-  sex, 
-  race, 
-  birth_date, 
-  death_date, 
-  social_security_number, 
-  address, 
-  city, 
-  state, 
-  zip_code, 
-  phone 
+select distinct
+  patient_id as source_person_id,
+  data_source,
+  first_name,
+  last_name,
+  sex,
+  race,
+  birth_date,
+  death_date,
+  social_security_number,
+  address,
+  city,
+  state,
+  zip_code,
+  phone
 from customer_tuva.input_layer.patient
 ```
 </pre>
@@ -198,5 +195,3 @@ Now that the universal patient ID (`person_id`) is populated in the Tuva Input L
 the Tuva Project may run, automatically populating the entire Tuva Data Model with
 the universal `person_id` field being used as a unique patient identifier across
 all data sources in all downstream data marts.
-
-
