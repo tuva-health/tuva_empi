@@ -1,7 +1,5 @@
-import threading
-import time
 from datetime import datetime
-from typing import Any, Optional, cast
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 from django.db import connection
@@ -12,6 +10,7 @@ from main.models import Config, Job, JobStatus
 from main.services.empi.empi_service import EMPIService
 from main.services.matching.job_runner import JobResult
 from main.services.matching.matching_service import MatchingService
+from main.tests.util.concurrency import run_with_lock_contention
 
 
 class MatchingServiceTestCase(TestCase):
@@ -106,39 +105,11 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             "s3://tuva-health-example/test", self.config.id
         )
 
-    def test_run_next_job_advisory_lock(self) -> None:
+    @patch("main.services.matching.matcher.logging.getLogger")
+    def test_run_next_job_advisory_lock(self, mock_get_logger: MagicMock) -> None:
         """Tests that only a single instance of run_next_job runs at a time."""
-        delay1 = threading.Event()
-        delay2 = threading.Event()
-
-        t1_exit: Optional[float] = None
-        t2_entry: Optional[float] = None
-
-        # run_job is called by run_next_job after the lock is obtained.
-        # We mock the first instance so that we can ensure it's run first and also to introduce
-        # an artificial delay.
-        def mock_run_job1(self: Any, job: Job) -> JobResult:
-            nonlocal t1_exit
-
-            # Signal that the MatchingService advisory lock should be held at this point
-            delay1.set()
-            # Wait for another instance of MatchingService to try to obtain the lock
-            delay2.wait()
-
-            t1_exit = time.time()
-
-            # Add delay so that we can verify the lock is being held
-            time.sleep(3)
-
-            return JobResult(return_code=0, error_message=None)
-
-        # We mock the second instance so that we can verify it's run second.
-        def mock_run_job2(self: Any, job: Job) -> JobResult:
-            nonlocal t2_entry
-
-            t2_entry = time.time()
-
-            return JobResult(return_code=0, error_message=None)
+        mock_logger = MagicMock()
+        mock_get_logger.return_value = mock_logger
 
         # Run run_next_job and close DB connection
         def run_next_job() -> None:
@@ -147,35 +118,15 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch(
-            "main.services.matching.matching_service.ProcessJobRunner.run_job",
-            new=mock_run_job1,
-        ):
-            t1 = threading.Thread(target=lambda: run_next_job())
-
-            # Start MatchingService 1
-            t1.start()
-
-            # Wait until MatchingService 1 obtains the lock
-            delay1.wait()
-
-            with patch(
-                "main.services.matching.matching_service.ProcessJobRunner.run_job",
-                new=mock_run_job2,
-            ):
-                t2 = threading.Thread(target=lambda: run_next_job())
-
-                # Start MatchingService 2
-                t2.start()
-
-                # Add delay to ensure MatchingService 2 has reached the lock
-                time.sleep(2)
-
-                # Signal to allow MatchingService 1 to finish and MatchingService 2 to start
-                delay2.set()
-
-                t1.join()
-                t2.join()
+        t1_exit, t2_entry = run_with_lock_contention(
+            patch1="main.services.matching.matching_service.ProcessJobRunner.run_job",
+            patch1_return=JobResult(return_code=0, error_message=None),
+            function1=run_next_job,
+            patch2="main.services.matching.matching_service.ProcessJobRunner.run_job",
+            patch2_return=JobResult(return_code=0, error_message=None),
+            function2=run_next_job,
+            post_contention_delay=3,
+        )
 
         self.assertIsNotNone(t1_exit)
         self.assertIsNotNone(t2_entry)

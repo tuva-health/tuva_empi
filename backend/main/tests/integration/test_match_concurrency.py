@@ -1,13 +1,9 @@
-import threading
-import time
 import uuid
 from datetime import datetime
-from typing import Any, Optional, cast
-from unittest.mock import patch
+from typing import cast
 
 import pandas as pd
 from django.db import connection
-from django.db.backends.utils import CursorWrapper
 from django.test import TransactionTestCase
 from django.utils import timezone
 
@@ -26,10 +22,9 @@ from main.models import (
 from main.services.empi.empi_service import (
     ConcurrentMatchUpdates,
     EMPIService,
-    PersonRecordIdsWithUUIDPartialDict,
-    PersonUpdateDict,
 )
 from main.services.matching.matcher import Matcher
+from main.tests.util.concurrency import run_with_lock_contention
 
 
 class MatchConcurrencyTestCase(TransactionTestCase):
@@ -232,44 +227,6 @@ class MatchConcurrencyTestCase(TransactionTestCase):
 
     def test_job_waits_on_match_person_records(self) -> None:
         """Tests that if EMPIService.match_person_records holds the match advisory lock, then Matcher.process_job waits."""
-        delay1 = threading.Event()
-        delay2 = threading.Event()
-
-        t1_exit: Optional[float] = None
-        t2_entry: Optional[float] = None
-
-        # EMPIService.validate_update_records is called by EMPIService.match_person_records after the
-        # lock is obtained. We mock it so that we can ensure it's run first and also to introduce an
-        # artificial delay.
-        def mock_validate_update_records(
-            self: Any,
-            person_updates: list[PersonUpdateDict],
-            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
-        ) -> bool:
-            nonlocal t1_exit
-
-            # Signal that the match advisory lock should be held at this point
-            delay1.set()
-            # Wait for Matcher to try to obtain the lock
-            delay2.wait()
-
-            t1_exit = time.time()
-
-            # Add delay so that we can verify the lock is being held
-            time.sleep(3)
-
-            return True
-
-        # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the lock is
-        # obtained. We mock it so that we can verify it's run second.
-        def mock_extract_current_results_with_lock(
-            self: Any, cursor: CursorWrapper, job: Job
-        ) -> pd.DataFrame:
-            nonlocal t2_entry
-
-            t2_entry = time.time()
-
-            return pd.DataFrame([])
 
         # Run EMPIService.match_person_records and close DB connection
         def match_person_records() -> None:
@@ -287,35 +244,39 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch(
+        t1_exit, t2_entry = run_with_lock_contention(
+            # EMPIService.validate_update_records is called by EMPIService.match_person_records after
+            # the lock is obtained.
             "main.services.empi.empi_service.EMPIService.validate_update_records",
-            new=mock_validate_update_records,
-        ):
-            t1 = threading.Thread(target=match_person_records)
-
-            # Start EMPIService
-            t1.start()
-
-            # Wait until EMPIService obtains the lock
-            delay1.wait()
-
-            with patch(
-                "main.services.matching.matcher.Matcher.extract_current_results_with_lock",
-                new=mock_extract_current_results_with_lock,
-            ):
-                t2 = threading.Thread(target=lambda: process_job(self.job2.id))
-
-                # Start Matcher
-                t2.start()
-
-                # Add delay to ensure Matcher has reached the lock
-                time.sleep(2)
-
-                # Signal to allow EMPIService to finish and Matcher to start
-                delay2.set()
-
-                t1.join()
-                t2.join()
+            None,
+            match_person_records,
+            # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the
+            # lock is obtained.
+            "main.services.matching.matcher.Matcher.extract_current_results_with_lock",
+            # Valid return value for extract_current_results_with_lock so that Matcher.process_job
+            # succeeds
+            pd.DataFrame(
+                columns=[
+                    "id",
+                    "job_id",
+                    "match_weight",
+                    "match_probability",
+                    "person_record_l_id",
+                    "person_record_r_id",
+                ]
+            ).astype(
+                {
+                    "id": "int64",
+                    "job_id": "int64",
+                    "match_weight": "float64",
+                    "match_probability": "float64",
+                    "person_record_l_id": "int64",
+                    "person_record_r_id": "int64",
+                }
+            ),
+            lambda: process_job(self.job2.id),
+            3,
+        )
 
         self.assertIsNotNone(t1_exit)
         self.assertIsNotNone(t2_entry)
@@ -335,47 +296,9 @@ class MatchConcurrencyTestCase(TransactionTestCase):
     def test_match_person_records_fails_when_job_runs(self) -> None:
         """Tests that if Matcher.process_job holds the match advisory lock, then EMPIService.match_person_records throws.
 
-        This is the same test as above, but reversed. match_person_records doesn't wait for Matcher to release the lock
-        because it might wait for a long time in the request/response cycle.
+        This is the same test as above, but reversed. match_person_records doesn't wait for Matcher
+        to release the lock because it might wait for a long time in the request/response cycle.
         """
-        delay1 = threading.Event()
-        delay2 = threading.Event()
-
-        t1_exit: Optional[float] = None
-        t2_entry: Optional[float] = None
-
-        # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the lock is
-        # obtained. We mock it so that we can ensure it's run first and also to introduce an artificial
-        # delay.
-        def mock_extract_current_results_with_lock(
-            self: Any, cursor: CursorWrapper, job: Job
-        ) -> pd.DataFrame:
-            nonlocal t1_exit
-
-            # Signal that the match advisory lock should be held at this point
-            delay1.set()
-            # Wait for EMPIService to try to obtain the lock
-            delay2.wait()
-
-            t1_exit = time.time()
-
-            # Add delay so that we can verify the lock is being held
-            time.sleep(3)
-
-            return pd.DataFrame([])
-
-        # EMPIService.validate_update_records is called by EMPIService.match_person_records after the
-        # lock is obtained. We mock it so that we can verify it's run second.
-        def mock_validate_update_records(
-            self: Any,
-            person_updates: list[PersonUpdateDict],
-            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
-        ) -> bool:
-            nonlocal t2_entry
-
-            t2_entry = time.time()
-
-            return True
 
         # Run Matcher.process_job and close DB connection
         def process_job(job_id: int) -> None:
@@ -394,35 +317,39 @@ class MatchConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch(
-            "main.services.matching.matcher.Matcher.extract_current_results_with_lock",
-            new=mock_extract_current_results_with_lock,
-        ):
-            t1 = threading.Thread(target=lambda: process_job(self.job2.id))
-
-            # Start Matcher
-            t1.start()
-
-            # Wait until Matcher obtains the lock
-            delay1.wait()
-
-            with patch(
-                "main.services.empi.empi_service.EMPIService.validate_update_records",
-                new=mock_validate_update_records,
-            ):
-                t2 = threading.Thread(target=match_person_records)
-
-                # Start EMPIService
-                t2.start()
-
-                # Add delay to ensure EMPIService has reached the lock
-                time.sleep(2)
-
-                # Signal to allow Matcher to finish and EMPIService to start
-                delay2.set()
-
-                t1.join()
-                t2.join()
+        t1_exit, t2_entry = run_with_lock_contention(
+            # Matcher.extract_current_results_with_lock is called by Matcher.process_job after the
+            # lock is obtained.
+            patch1="main.services.matching.matcher.Matcher.extract_current_results_with_lock",
+            # Return empty dataframe from extract_current_results_with_lock so that Matcher.process_job
+            # succeeds
+            patch1_return=pd.DataFrame(
+                columns=[
+                    "id",
+                    "job_id",
+                    "match_weight",
+                    "match_probability",
+                    "person_record_l_id",
+                    "person_record_r_id",
+                ]
+            ).astype(
+                {
+                    "id": "int64",
+                    "job_id": "int64",
+                    "match_weight": "float64",
+                    "match_probability": "float64",
+                    "person_record_l_id": "int64",
+                    "person_record_r_id": "int64",
+                }
+            ),
+            function1=lambda: process_job(self.job2.id),
+            # EMPIService.validate_update_records is called by EMPIService.match_person_records after
+            # the lock is obtained.
+            patch2="main.services.empi.empi_service.EMPIService.validate_update_records",
+            patch2_return=True,
+            function2=match_person_records,
+            post_contention_delay=3,
+        )
 
         self.assertIsNotNone(t1_exit)
         self.assertIsNone(t2_entry)

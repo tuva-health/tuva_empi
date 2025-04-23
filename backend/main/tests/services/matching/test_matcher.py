@@ -2,11 +2,9 @@ import copy
 import hashlib
 import json
 import logging
-import threading
-import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Mapping, Optional, TypedDict, cast
+from typing import Any, Mapping, TypedDict, cast
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -14,7 +12,6 @@ import pandas.testing as pdt
 import psycopg
 from django.conf import settings
 from django.db import OperationalError, connection, transaction
-from django.db.backends.utils import CursorWrapper
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
@@ -36,6 +33,7 @@ from main.models import (
 )
 from main.services.empi.empi_service import EMPIService
 from main.services.matching.matcher import Matcher
+from main.tests.util.concurrency import run_with_lock_contention
 from main.util.dict import select_keys
 from main.util.sql import load_df
 
@@ -2252,42 +2250,6 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
 
-        delay1 = threading.Event()
-        delay2 = threading.Event()
-
-        t1_exit: Optional[float] = None
-        t2_entry: Optional[float] = None
-
-        # load_person_records is called by process_job after the lock is obtained.
-        # We mock the first instance so that we can ensure it's run first and also to introduce
-        # an artificial delay.
-        def mock_load_person_records_1(
-            self: Any, cursor: CursorWrapper, job: Job
-        ) -> int:
-            nonlocal t1_exit
-
-            # Signal that the Matcher advisory lock should be held at this point
-            delay1.set()
-            # Wait for Matcher 2 to try to obtain the lock
-            delay2.wait()
-
-            t1_exit = time.time()
-
-            # Add delay so that we can verify the lock is being held
-            time.sleep(3)
-
-            return 0
-
-        # We mock the second instance so that we can verify it's run second.
-        def mock_load_person_records_2(
-            self: Any, cursor: CursorWrapper, job: Job
-        ) -> int:
-            nonlocal t2_entry
-
-            t2_entry = time.time()
-
-            return 0
-
         # Run process_job and close DB connection
         def process_job(job_id: int) -> None:
             try:
@@ -2295,35 +2257,17 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch(
-            "main.services.matching.matcher.Matcher.load_person_records",
-            new=mock_load_person_records_1,
-        ):
-            t1 = threading.Thread(target=lambda: process_job(self.job1.id))
-
-            # Start Matcher 1
-            t1.start()
-
-            # Wait until Matcher 1 obtains the lock
-            delay1.wait()
-
-            with patch(
-                "main.services.matching.matcher.Matcher.load_person_records",
-                new=mock_load_person_records_2,
-            ):
-                t2 = threading.Thread(target=lambda: process_job(self.job2.id))
-
-                # Start Matcher 2
-                t2.start()
-
-                # Add delay to ensure Matcher 2 has reached the lock
-                time.sleep(2)
-
-                # Signal to allow Matcher 1 to finish and Matcher 2 to start
-                delay2.set()
-
-                t1.join()
-                t2.join()
+        t1_exit, t2_entry = run_with_lock_contention(
+            patch1="main.services.matching.matcher.Matcher.load_person_records",
+            # Return zero from load_person_records
+            patch1_return=0,
+            function1=lambda: process_job(self.job1.id),
+            patch2="main.services.matching.matcher.Matcher.load_person_records",
+            # Return zero from load_person_records
+            patch2_return=0,
+            function2=lambda: process_job(self.job2.id),
+            post_contention_delay=3,
+        )
 
         self.assertIsNotNone(t1_exit)
         self.assertIsNotNone(t2_entry)
