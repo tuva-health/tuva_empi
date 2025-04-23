@@ -55,7 +55,7 @@ const config: Config = {
       items: [
         {
           type: "doc",
-          docId: "tuva-empi/overview",
+          docId: "tuva-empi/landing",
           position: "left",
           label: "Docs",
         },
