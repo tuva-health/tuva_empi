@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta
+from datetime import timezone as tz
 from typing import Any, Mapping, TypedDict, cast
 from unittest.mock import MagicMock, patch
 
@@ -2527,4 +2528,48 @@ class MatcherConcurrencyTestCase(TransactionTestCase):
         self.assertEqual(self.job2.status, JobStatus.succeeded)
         self.assertIsNone(self.job2.reason)
 
-    # FIXME: Add test for cleanup_failed_job concurrency
+    def test_cleanup_failed_job_row_lock(self) -> None:
+        """Tests that only a single instance of cleanup_failed_job runs for a specific Job at a time."""
+
+        # Run cleanup_failed_job and close DB connection
+        def cleanup_failed_job_1() -> None:
+            try:
+                Matcher().cleanup_failed_job(self.job1, Exception("Test error"))
+            finally:
+                connection.close()
+
+        # Run cleanup_failed_job and close DB connection
+        def cleanup_failed_job_2() -> None:
+            try:
+                # Matcher 2 should fail to update the first job
+                with self.assertRaisesMessage(
+                    Exception,
+                    "Failed to update Job failure status and cleanup staging records."
+                    f" Job {self.job1.id} status is {JobStatus.failed.value}, expected {JobStatus.new.value}.",
+                ):
+                    Matcher().cleanup_failed_job(self.job1, Exception("Test error"))
+            finally:
+                connection.close()
+
+        t1_exit, t2_entry = run_with_lock_contention(
+            patch1="main.services.matching.matcher.Matcher.delete_staging_records",
+            patch1_return=None,
+            function1=cleanup_failed_job_1,
+            patch2="main.services.matching.matcher.Matcher.delete_staging_records",
+            patch2_return=None,
+            function2=cleanup_failed_job_2,
+            post_contention_delay=3,
+        )
+
+        self.assertIsNotNone(t1_exit)
+        self.assertIsNone(t2_entry)
+
+        # Matcher 1 should have marked the first job as failed
+        self.job1.refresh_from_db()
+        self.assertEqual(self.job1.status, JobStatus.failed)
+        self.assertEqual(self.job1.reason, "Error: Test error")
+        self.assertLess(self.job1.updated, datetime.fromtimestamp(t1_exit, tz=tz.utc))
+
+        self.job2.refresh_from_db()
+        self.assertEqual(self.job2.status, JobStatus.new)
+        self.assertIsNone(self.job2.reason)
