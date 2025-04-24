@@ -1857,6 +1857,37 @@ class ProcessNextJobTestCase(TransactionTestCase):
         )
 
     @patch("main.services.matching.matcher.Matcher.process_job")
+    def test_process_next_job_no_job(self, mock_process_job: MagicMock) -> None:
+        """Method process_next_job should return early if there are no new jobs."""
+        now = timezone.now()
+
+        self.job1.status = JobStatus.succeeded
+        self.job1.updated = now
+        self.job1.save()
+
+        self.job2.status = JobStatus.failed
+        self.job2.updated = now
+        self.job2.save()
+
+        Matcher().process_next_job()
+
+        mock_process_job.assert_not_called()
+
+        self.job1.refresh_from_db()
+        self.job2.refresh_from_db()
+
+        # job1 should remain the same
+        self.assertEqual(self.job1.status, JobStatus.succeeded)
+        self.assertEqual(self.job1.updated, now)
+
+        # job2 should remain the same
+        self.assertEqual(self.job2.status, JobStatus.failed)
+        self.assertEqual(self.job2.updated, now)
+
+        # Staging records should remain untouched
+        self.assertEqual(PersonRecordStaging.objects.count(), 3)
+
+    @patch("main.services.matching.matcher.Matcher.process_job")
     def test_process_next_job_failure_exc(self, mock_process_job: MagicMock) -> None:
         """Method process_next_job should mark Job as failed if process_job throws an exception."""
         mock_process_job.side_effect = ValueError("Something unexpected happened")
