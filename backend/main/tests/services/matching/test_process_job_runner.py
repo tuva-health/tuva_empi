@@ -64,7 +64,7 @@ class ProcessJobRunnerTestCase(TestCase):
         ]
         mock_sel.get_map.side_effect = [True, False]
 
-        job_result = self.process_job_runner.run_job(self.job)
+        job_result = self.process_job_runner.run_job()
 
         # Refresh the job from the database to check for updates
         self.job.refresh_from_db()
@@ -103,7 +103,7 @@ class ProcessJobRunnerTestCase(TestCase):
         ]
         mock_sel.get_map.side_effect = [True, False]
 
-        job_result = self.process_job_runner.run_job(self.job)
+        job_result = self.process_job_runner.run_job()
 
         # Refresh the job from the database to check for updates
         self.job.refresh_from_db()

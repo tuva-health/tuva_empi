@@ -1,6 +1,5 @@
 import os
 import threading
-import time
 import uuid
 from datetime import datetime, timedelta
 from datetime import timezone as tz
@@ -36,13 +35,13 @@ from main.services.empi.empi_service import (
     InvalidPotentialMatch,
     PersonDict,
     PersonRecordDict,
-    PersonRecordIdsWithUUIDPartialDict,
     PersonSummaryDict,
     PersonUpdateDict,
     PotentialMatchDict,
     PotentialMatchSummaryDict,
     PredictionResultDict,
 )
+from main.tests.util.concurrency import run_with_lock_contention
 from main.util.dict import select_keys
 from main.util.s3 import S3Client, UploadError
 
@@ -3574,45 +3573,6 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
 
     def test_concurrent_match_same_match_group(self) -> None:
         """Tests that if match_person_records holds the MatchGroup row lock, then another instance of match_person_records (with the same MatchGroup) waits."""
-        delay1 = threading.Event()
-        delay2 = threading.Event()
-
-        t1_exit: Optional[float] = None
-        t2_entry: Optional[float] = None
-
-        # validate_update_records is called by match_person_records after the lock is obtained.
-        # We mock the first instance so that we can ensure it's run first and also to introduce
-        # an artificial delay.
-        def mock_validate_update_records_1(
-            self: Any,
-            person_updates: list[PersonUpdateDict],
-            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
-        ) -> bool:
-            nonlocal t1_exit
-
-            # Signal that the MatchGroup row lock should be held at this point
-            delay1.set()
-            # Wait for EMPIService 2 to try to obtain the lock
-            delay2.wait()
-
-            t1_exit = time.time()
-
-            # Add delay so that we can verify the lock is being held
-            time.sleep(3)
-
-            return True
-
-        # We mock the second instance so that we can verify it's run second.
-        def mock_validate_update_records_2(
-            self: Any,
-            person_updates: list[PersonUpdateDict],
-            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
-        ) -> bool:
-            nonlocal t2_entry
-
-            t2_entry = time.time()
-
-            return True
 
         # Run match_person_records and close DB connection
         def match_person_records_1() -> None:
@@ -3635,35 +3595,15 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch(
-            "main.services.empi.empi_service.EMPIService.validate_update_records",
-            new=mock_validate_update_records_1,
-        ):
-            t1 = threading.Thread(target=match_person_records_1)
-
-            # Start EMPIService 1
-            t1.start()
-
-            # Wait until EMPIService 1 obtains the lock
-            delay1.wait()
-
-            with patch(
-                "main.services.empi.empi_service.EMPIService.validate_update_records",
-                new=mock_validate_update_records_2,
-            ):
-                t2 = threading.Thread(target=match_person_records_2)
-
-                # Start EMPIService 2
-                t2.start()
-
-                # Add delay to ensure EMPIService 2 has reached the lock
-                time.sleep(2)
-
-                # Signal to allow EMPIService 1 to finish and EMPIService 2 to start
-                delay2.set()
-
-                t1.join()
-                t2.join()
+        t1_exit, t2_entry = run_with_lock_contention(
+            patch1="main.services.empi.empi_service.EMPIService.validate_update_records",
+            patch1_return=True,
+            function1=match_person_records_1,
+            patch2="main.services.empi.empi_service.EMPIService.validate_update_records",
+            patch2_return=True,
+            function2=match_person_records_2,
+            post_contention_delay=3,
+        )
 
         self.assertIsNotNone(t1_exit)
         self.assertIsNone(t2_entry)
@@ -3675,45 +3615,6 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
 
     def test_concurrent_match_different_match_groups(self) -> None:
         """Tests that if match_person_records holds the MatchGroup row lock, then another instance of match_person_records (with the a different MatchGroup) can proceed concurrently."""
-        delay1 = threading.Event()
-        delay2 = threading.Event()
-
-        t1_exit: Optional[float] = None
-        t2_entry: Optional[float] = None
-
-        # validate_update_records is called by match_person_records after the lock is obtained.
-        # We mock the first instance so that we can ensure it's run first and also to introduce
-        # an artificial delay.
-        def mock_validate_update_records_1(
-            self: Any,
-            person_updates: list[PersonUpdateDict],
-            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
-        ) -> bool:
-            nonlocal t1_exit
-
-            # Signal that the MatchGroup row lock should be held at this point
-            delay1.set()
-            # Wait for EMPIService 2 to try to obtain the lock
-            delay2.wait()
-
-            t1_exit = time.time()
-
-            # Add delay so that we can verify the lock is being held
-            time.sleep(3)
-
-            return True
-
-        # We mock the second instance so that we can verify it's run second.
-        def mock_validate_update_records_2(
-            self: Any,
-            person_updates: list[PersonUpdateDict],
-            match_group_records: list[PersonRecordIdsWithUUIDPartialDict],
-        ) -> bool:
-            nonlocal t2_entry
-
-            t2_entry = time.time()
-
-            return True
 
         # Run match_person_records and close DB connection
         def match_person_records_1() -> None:
@@ -3733,35 +3634,15 @@ class MatchPersonRecordsConcurrencyTestCase(TransactionTestCase):
             finally:
                 connection.close()
 
-        with patch(
-            "main.services.empi.empi_service.EMPIService.validate_update_records",
-            new=mock_validate_update_records_1,
-        ):
-            t1 = threading.Thread(target=match_person_records_1)
-
-            # Start EMPIService 1
-            t1.start()
-
-            # Wait until EMPIService 1 obtains the lock
-            delay1.wait()
-
-            with patch(
-                "main.services.empi.empi_service.EMPIService.validate_update_records",
-                new=mock_validate_update_records_2,
-            ):
-                t2 = threading.Thread(target=match_person_records_2)
-
-                # Start EMPIService 2
-                t2.start()
-
-                # Add delay to ensure EMPIService 2 has reached the lock
-                time.sleep(2)
-
-                # Signal to allow EMPIService 1 to finish and EMPIService 2 to start
-                delay2.set()
-
-                t1.join()
-                t2.join()
+        t1_exit, t2_entry = run_with_lock_contention(
+            patch1="main.services.empi.empi_service.EMPIService.validate_update_records",
+            patch1_return=True,
+            function1=match_person_records_1,
+            patch2="main.services.empi.empi_service.EMPIService.validate_update_records",
+            patch2_return=True,
+            function2=match_person_records_2,
+            post_contention_delay=3,
+        )
 
         self.assertIsNotNone(t1_exit)
         self.assertIsNotNone(t2_entry)
