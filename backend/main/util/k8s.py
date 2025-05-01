@@ -108,7 +108,7 @@ class K8sJobClient:
         job_name: str,
         image: str,
         image_pull_policy: Literal["Always", "IfNotPresent", "Never"] = "IfNotPresent",
-        command: Optional[list[str]] = None,
+        args: Optional[list[str]] = None,
         secret_volume: Optional[SecretVolume] = None,
         termination_grace_period_seconds: int = 0,
         parallelism: int = 1,
@@ -152,7 +152,7 @@ class K8sJobClient:
                                 name=job_name,
                                 image=image,
                                 image_pull_policy=image_pull_policy,
-                                command=command,
+                                args=args,
                                 volume_mounts=volume_mounts,
                                 env=[
                                     client.V1EnvVar(name=key, value=value)
