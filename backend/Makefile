@@ -1,4 +1,4 @@
-.PHONY: error install install-dev install-all makemigrations migrate bootstrap format lint dmypy check test report run-dev matching-service-dev configure run matching-service
+.PHONY: error install install-dev install-all makemigrations migrate bootstrap format lint dmypy check test test-single dmypy-ci check-ci test-ci report run-dev matching-service-dev configure run matching-service
 
 error:
 	@echo "Available commands: install, migrate, format, test, run"
@@ -30,20 +30,29 @@ lint:
 	ruff check
 
 dmypy:
-	- dmypy start
+	- @env TUVA_EMPI_CONFIG_FILE="config/local.test.json" dmypy start
 
 check: dmypy
 	dmypy check .
 
 test: check
-	coverage run manage.py test
+	@env TUVA_EMPI_CONFIG_FILE="config/local.test.json" coverage run manage.py test
 
-test-single:
+test-single: check
 	@if [ -z "$(test)" ]; then \
 		echo "Error: test variable is not set. Use 'make test-single test=<test_name>'"; \
 		exit 1; \
 	fi
-	python manage.py test $(test)
+	@env TUVA_EMPI_CONFIG_FILE="config/local.test.json" python manage.py test $(test)
+
+dmypy-ci:
+	- @env TUVA_EMPI_CONFIG_FILE="config/ci.json" dmypy start
+
+check-ci: dmypy-ci
+	dmypy check .
+
+test-ci: check-ci
+	@env TUVA_EMPI_CONFIG_FILE="config/ci.json" coverage run manage.py test
 
 report:
 	coverage report -m --omit="main/tests/*"

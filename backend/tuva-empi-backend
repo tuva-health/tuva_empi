@@ -14,11 +14,13 @@ if [[ "$mode" == "api" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec gunicorn tuva_empi.wsgi:application --bind 0.0.0.0:8000
 elif [[ "$mode" == "matching-service" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py run_matching_service
+elif [[ "$mode" == "matching-job" ]]; then
+  TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py run_matching_job
 elif [[ "$mode" == "bootstrap" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py bootstrap
 elif [[ "$mode" == "migrate" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py migrate
 else
-  echo "Usage: $0 [api|matching-service|bootstrap|migrate]"
+  echo "Usage: $0 [api|matching-service|matching-job|bootstrap|migrate]"
   exit 1
 fi

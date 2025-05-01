@@ -4,7 +4,7 @@ import os
 from main.util.secrets_manager import SecretsManagerClient
 
 
-def get_config() -> None:
+def load_config() -> None:
     config_path = os.environ["DEST_CONFIG_FILE"]
 
     if os.path.exists(config_path):
@@ -29,4 +29,4 @@ def get_config() -> None:
 
 
 if __name__ == "__main__":
-    get_config()
+    load_config()
