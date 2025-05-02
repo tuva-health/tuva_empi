@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 from django.test import TestCase
 
+from main.config import AppConfig, IdpBackend, IdpConfig, KeycloakConfig
 from main.services.identity.keycloak_provider import KeycloakIdentityProvider
 
 
@@ -12,17 +13,17 @@ class KeycloakIdentityProviderTests(TestCase):
         mock_kc_client.return_value.list_users.return_value = [
             {"id": "user-123", "email": "test@example.com"}
         ]
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "keycloak",
-                "keycloak": {
-                    "server_url": "http://example.com",
-                    "realm": "example-realm",
-                    "client_id": "client-id",
-                    "client_secret": "client-secret",
-                },
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend=IdpBackend.keycloak,
+                keycloak=KeycloakConfig.model_construct(  # type: ignore[call-arg]
+                    server_url="http://example.com",
+                    realm="example-realm",
+                    client_id="client-id",
+                    client_secret="client-secret",
+                ),
+            ),
+        )
 
         provider = KeycloakIdentityProvider()
         users = provider.get_users()

@@ -6,6 +6,7 @@ from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
+from main.config import AppConfig, JobRunnerType, MatchingServiceConfig
 from main.models import Config, Job, JobStatus
 from main.services.empi.empi_service import EMPIService
 from main.services.matching.job_runner import JobResult
@@ -35,11 +36,11 @@ class MatchingServiceTestCase(TestCase):
 
     @patch("main.services.matching.matching_service.get_config")
     def setUp(self, mock_get_config: MagicMock) -> None:
-        mock_get_config.return_value = {
-            "matching_service": {
-                "job_runner": "process",
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            matching_service=MatchingServiceConfig.model_construct(
+                job_runner=JobRunnerType.process,
+            ),
+        )
         self.matching_service = MatchingService()
         self.config = Config.objects.create(**self.config_partial)
 
@@ -47,12 +48,8 @@ class MatchingServiceTestCase(TestCase):
         self.job = Job.objects.create(**self.job_partial)
 
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
-    @patch("main.services.identity.identity_service.get_config")
-    def test_run_next_job_failure(
-        self, mock_get_config: MagicMock, mock_run_job: MagicMock
-    ) -> None:
+    def test_run_next_job_failure(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should log error if Job runner fails to run the Job."""
-        mock_get_config.return_value = {"matching-service": {"job_runner": "process"}}
         mock_run_job.return_value = JobResult(1, "Out of memory\n")
         self.matching_service.logger = MagicMock()
 
@@ -77,12 +74,8 @@ class MatchingServiceTestCase(TestCase):
         )
 
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
-    @patch("main.services.identity.identity_service.get_config")
-    def test_run_next_job_failure_exc(
-        self, mock_get_config: MagicMock, mock_run_job: MagicMock
-    ) -> None:
+    def test_run_next_job_failure_exc(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should throw if Job runner throws an exception."""
-        mock_get_config.return_value = {"matching-service": {"job_runner": "process"}}
         mock_run_job.side_effect = ValueError("Out of memory exception")
 
         with self.assertRaisesMessage(ValueError, "Out of memory exception"):
@@ -96,12 +89,8 @@ class MatchingServiceTestCase(TestCase):
         self.assertIsNone(self.job.reason)
 
     @patch("main.services.matching.process_job_runner.ProcessJobRunner.run_job")
-    @patch("main.services.identity.identity_service.get_config")
-    def test_run_next_job_success(
-        self, mock_get_config: MagicMock, mock_run_job: MagicMock
-    ) -> None:
+    def test_run_next_job_success(self, mock_run_job: MagicMock) -> None:
         """Method run_next_job should return if Job runner succeeds in running the Job."""
-        mock_get_config.return_value = {"matching-service": {"job_runner": "process"}}
         mock_run_job.return_value = JobResult(0, None)
         self.matching_service.logger = MagicMock()
 
@@ -163,11 +152,11 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
                 with patch(
                     "main.services.matching.matching_service.get_config"
                 ) as mock_get_config:
-                    mock_get_config.return_value = {
-                        "matching_service": {
-                            "job_runner": "process",
-                        }
-                    }
+                    mock_get_config.return_value = AppConfig.model_construct(
+                        matching_service=MatchingServiceConfig.model_construct(
+                            job_runner=JobRunnerType.process,
+                        ),
+                    )
                     MatchingService().run_next_job()
             finally:
                 connection.close()
