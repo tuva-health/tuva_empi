@@ -35,11 +35,11 @@ class MatchingService:
             signal.signal(signal.SIGTERM, self.handle_sigterm)
 
     def _get_job_runner(self) -> JobRunner:
-        job_runner = get_config()["matching_service"]["job_runner"]
+        job_runner = get_config().matching_service.job_runner
 
-        if job_runner == JobRunnerType.process.value:
+        if job_runner == JobRunnerType.process:
             return ProcessJobRunner()
-        elif job_runner == JobRunnerType.k8s.value:
+        elif job_runner == JobRunnerType.k8s:
             return K8sJobRunner()
         else:
             raise Exception("Job runner required")

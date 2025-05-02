@@ -11,5 +11,21 @@
         "debug": false,
         "secret_key": "django-insecure-$@j@kbe1r&e!g*%kz(#mwje1z+6$fs24m6h4rukhkmsi))l8vg",
         "allowed_hosts": [".localhost", "127.0.0.1", "[::1]"]
-    }
+    },
+    "matching_service": {
+        "job_runner": "process"
+    },
+    "idp": {
+        "backend": "keycloak",
+        "keycloak": {
+            "server_url": "",
+            "realm": "",
+            "jwt_header": "",
+            "jwt_aud": "",
+            "jwks_url": "",
+            "client_id": "",
+            "client_secret": ""
+        }
+    },
+    "initial_setup": {"admin_email": ""}
 }

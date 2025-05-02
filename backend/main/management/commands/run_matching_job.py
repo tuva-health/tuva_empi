@@ -13,7 +13,7 @@ class Command(BaseCommand):
     help = "Processes a single Matching Job"
 
     def handle(self, *args: str, **options: str) -> None:
-        version = get_config()["version"]
+        version = get_config().version
         expected_version = os.environ["TUVA_EMPI_EXPECTED_VERSION"]
 
         logger.info(f"Matching Job version: {version}")

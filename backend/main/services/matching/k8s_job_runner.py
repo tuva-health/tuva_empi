@@ -28,15 +28,18 @@ class K8sJobRunner(JobRunner):
         self.logger.info(f"Creating K8s job {job_name}")
 
         config = get_config()
-        version = config["version"]
-        runner_config = config["matching_service"]["k8s_job_runner"]
+        version = config.version
+
+        runner_config = config.matching_service.k8s_job_runner
+        assert runner_config
+
         secret_volume = (
             SecretVolume(
-                secret_name=runner_config["job_config_secret_volume"]["secret_name"],
-                secret_key=runner_config["job_config_secret_volume"]["secret_key"],
-                mount_path=runner_config["job_config_secret_volume"]["mount_path"],
+                secret_name=runner_config.job_config_secret_volume.secret_name,
+                secret_key=runner_config.job_config_secret_volume.secret_key,
+                mount_path=runner_config.job_config_secret_volume.mount_path,
             )
-            if runner_config["job_config_secret_volume"]
+            if runner_config.job_config_secret_volume
             else None
         )
         env = {"TUVA_EMPI_EXPECTED_VERSION": version}
@@ -53,8 +56,8 @@ class K8sJobRunner(JobRunner):
         try:
             self.k8s.run_job(
                 job_name=job_name,
-                image=runner_config["job_image"],
-                image_pull_policy=runner_config["job_image_pull_policy"],
+                image=runner_config.job_image,
+                image_pull_policy=runner_config.job_image_pull_policy,
                 args=["matching-job"],
                 secret_volume=secret_volume,
                 termination_grace_period_seconds=0,
@@ -65,11 +68,7 @@ class K8sJobRunner(JobRunner):
                 # Retry 0 times before considering Job as failed
                 backoff_limit=0,
                 env=env,
-                service_account_name=(
-                    runner_config["job_service_account_name"]
-                    if "job_service_account_name" in runner_config
-                    else None
-                ),
+                service_account_name=runner_config.job_service_account_name,
             )
         except K8sJobAlreadyExists:
             self.logger.info(

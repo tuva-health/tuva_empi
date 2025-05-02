@@ -1,10 +1,15 @@
 import unittest
 from dataclasses import asdict
 from pathlib import Path
-from typing import cast
 from unittest.mock import MagicMock, call, patch
 
-from main.config import ConfigDict
+from main.config import (
+    AppConfig,
+    JobRunnerType,
+    K8sJobRunnerConfig,
+    K8sJobRunnerSecretVolumeConfig,
+    MatchingServiceConfig,
+)
 from main.services.matching.job_runner import JobResult
 from main.services.matching.k8s_job_runner import K8sJobRunner
 from main.util.k8s import (
@@ -20,7 +25,7 @@ class K8sJobRunnerTestCase(unittest.TestCase):
     mock_logger: MagicMock
     mock_k8s: MagicMock
     runner: K8sJobRunner
-    config: ConfigDict
+    config: AppConfig
 
     def setUp(self) -> None:
         get_logger_patcher = patch(
@@ -42,22 +47,20 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         self.mock_k8s = mock_k8s_client_class.return_value
 
         mock_get_config = get_config_patcher.start()
-        self.config = cast(
-            ConfigDict,
-            {
-                "version": "test-version",
-                "matching_service": {
-                    "k8s_job_runner": {
-                        "job_image": "tuva-empi:latest",
-                        "job_image_pull_policy": "IfNotPresent",
-                        "job_config_secret_volume": {
-                            "secret_name": "my-secret",
-                            "secret_key": "config.json",
-                            "mount_path": "/etc/config",
-                        },
-                    }
-                },
-            },
+        self.config = AppConfig.model_construct(
+            version="test-version",
+            matching_service=MatchingServiceConfig.model_construct(
+                job_runner=JobRunnerType.k8s,
+                k8s_job_runner=K8sJobRunnerConfig.model_construct(
+                    job_image="tuva-empi:latest",
+                    job_image_pull_policy="IfNotPresent",
+                    job_config_secret_volume=K8sJobRunnerSecretVolumeConfig.model_construct(
+                        secret_name="my-secret",
+                        secret_key="config.json",
+                        mount_path="/etc/config",
+                    ),
+                ),
+            ),
         )
         mock_get_config.return_value = self.config
 
@@ -65,21 +68,22 @@ class K8sJobRunnerTestCase(unittest.TestCase):
 
     def test__run_job_success(self) -> None:
         """Method _run_job should call K8sJobClient.run_job with expected parameters."""
-        k8s_runner_config = self.config["matching_service"]["k8s_job_runner"]
+        k8s_runner_config = self.config.matching_service.k8s_job_runner
+        assert k8s_runner_config
+        secret_volume = k8s_runner_config.job_config_secret_volume
+        assert secret_volume
 
         self.runner._run_job("matching-job")
 
         self.mock_k8s.run_job.assert_called_once_with(
             job_name="matching-job",
-            image=k8s_runner_config["job_image"],
-            image_pull_policy=k8s_runner_config["job_image_pull_policy"],
+            image=k8s_runner_config.job_image,
+            image_pull_policy=k8s_runner_config.job_image_pull_policy,
             args=["matching-job"],
             secret_volume=SecretVolume(
-                secret_name=k8s_runner_config["job_config_secret_volume"][
-                    "secret_name"
-                ],
-                secret_key=k8s_runner_config["job_config_secret_volume"]["secret_key"],
-                mount_path=k8s_runner_config["job_config_secret_volume"]["mount_path"],
+                secret_name=secret_volume.secret_name,
+                secret_key=secret_volume.secret_key,
+                mount_path=secret_volume.mount_path,
             ),
             termination_grace_period_seconds=0,
             parallelism=1,
@@ -88,8 +92,7 @@ class K8sJobRunnerTestCase(unittest.TestCase):
             env={
                 "TUVA_EMPI_EXPECTED_VERSION": "test-version",
                 "TUVA_EMPI_CONFIG_FILE": str(
-                    Path(k8s_runner_config["job_config_secret_volume"]["mount_path"])
-                    / k8s_runner_config["job_config_secret_volume"]["secret_key"]
+                    Path(secret_volume.mount_path) / secret_volume.secret_key
                 ),
             },
             service_account_name=None,
@@ -193,7 +196,7 @@ class RunJobTestCase(unittest.TestCase):
     mock_logger: MagicMock
     mock_k8s: MagicMock
     runner: K8sJobRunner
-    config: ConfigDict
+    config: AppConfig
 
     def setUp(self) -> None:
         # Patch logger, config, and K8s client
@@ -201,29 +204,12 @@ class RunJobTestCase(unittest.TestCase):
             "main.services.matching.k8s_job_runner.logging.getLogger"
         )
         k8s_patcher = patch("main.services.matching.k8s_job_runner.K8sJobClient")
-        config_patcher = patch("main.services.matching.k8s_job_runner.get_config")
 
         self.mock_logger = logger_patcher.start().return_value
         self.mock_k8s = k8s_patcher.start().return_value
-        self.mock_config = config_patcher.start()
 
         self.addCleanup(logger_patcher.stop)
         self.addCleanup(k8s_patcher.stop)
-        self.addCleanup(config_patcher.stop)
-
-        self.mock_config.return_value = {
-            "matching_service": {
-                "k8s_job_runner": {
-                    "job_image": "tuva-empi:latest",
-                    "job_image_pull_policy": "IfNotPresent",
-                    "job_config_secret_volume": {
-                        "secret_name": "my-secret",
-                        "secret_key": "config.json",
-                        "mount_path": "/etc/config",
-                    },
-                }
-            }
-        }
 
         self.runner = K8sJobRunner()
 
