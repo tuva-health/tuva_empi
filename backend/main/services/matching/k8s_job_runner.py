@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
@@ -44,6 +45,10 @@ class K8sJobRunner(JobRunner):
             env["TUVA_EMPI_CONFIG_FILE"] = str(
                 Path(secret_volume.mount_path) / secret_volume.secret_key
             )
+        elif "TUVA_EMPI_CONFIG_AWS_SECRET_ARN" in os.environ:
+            env["TUVA_EMPI_CONFIG_AWS_SECRET_ARN"] = os.environ[
+                "TUVA_EMPI_CONFIG_AWS_SECRET_ARN"
+            ]
 
         try:
             self.k8s.run_job(
