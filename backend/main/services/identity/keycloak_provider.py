@@ -13,11 +13,15 @@ class KeycloakIdentityProvider(IdentityProvider):
     def __init__(self, keycloak: Optional[KeycloakClient] = None) -> None:
         config = get_config()
         self.logger = logging.getLogger(__name__)
+
+        keycloak_config = config.idp.keycloak
+        assert keycloak_config
+
         self.keycloak = keycloak or KeycloakClient(
-            server_url=config["idp"]["keycloak"]["server_url"],
-            realm=config["idp"]["keycloak"]["realm"],
-            client_id=config["idp"]["keycloak"]["client_id"],
-            client_secret=config["idp"]["keycloak"]["client_secret"],
+            server_url=keycloak_config.server_url,
+            realm=keycloak_config.realm,
+            client_id=keycloak_config.client_id,
+            client_secret=keycloak_config.client_secret,
         )
 
     def get_users(self) -> list[IdpUser]:

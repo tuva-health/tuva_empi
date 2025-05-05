@@ -1,6 +1,7 @@
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from main.config import AppConfig, AwsCognitoConfig, IdpBackend, IdpConfig
 from main.services.identity.cognito_provider import CognitoIdentityProvider
 from main.util.cognito import CognitoAttributeName, CognitoClient
 
@@ -17,14 +18,14 @@ class CognitoIdentityProviderTests(TestCase):
         }
         mock_cognito_client.return_value.list_users.return_value = [mock_user]
         mock_cognito_client.return_value.get_attr = CognitoClient.get_attr
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "aws-cognito",
-                "aws_cognito": {
-                    "cognito_user_pool_id": "test-user-pool-1234",
-                },
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend=IdpBackend.aws_cognito,
+                aws_cognito=AwsCognitoConfig.model_construct(  # type: ignore[call-arg]
+                    cognito_user_pool_id="test-user-pool-1234"
+                ),
+            ),
+        )
 
         provider = CognitoIdentityProvider()
 
@@ -40,14 +41,14 @@ class CognitoIdentityProviderTests(TestCase):
         self, mock_cognito_client: Mock, mock_get_config: Mock
     ) -> None:
         mock_cognito_client.return_value.list_users.return_value = []
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "aws-cognito",
-                "aws_cognito": {
-                    "cognito_user_pool_id": "test-user-pool-1234",
-                },
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend=IdpBackend.aws_cognito,
+                aws_cognito=AwsCognitoConfig.model_construct(  # type: ignore[call-arg]
+                    cognito_user_pool_id="test-user-pool-1234"
+                ),
+            ),
+        )
 
         provider = CognitoIdentityProvider()
 
@@ -63,14 +64,14 @@ class CognitoIdentityProviderTests(TestCase):
         mock_cognito_client.return_value.list_users.side_effect = Exception(
             "mocked exception"
         )
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "aws-cognito",
-                "aws_cognito": {
-                    "cognito_user_pool_id": "test-user-pool-1234",
-                },
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend=IdpBackend.aws_cognito,
+                aws_cognito=AwsCognitoConfig.model_construct(  # type: ignore[call-arg]
+                    cognito_user_pool_id="test-user-pool-1234"
+                ),
+            ),
+        )
 
         provider = CognitoIdentityProvider()
 
