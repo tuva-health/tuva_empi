@@ -43,7 +43,7 @@ class K8sJobRunner(JobRunner):
                 image_pull_policy=config["job_image_pull_policy"],
                 command=["python", "manage.py", "run_matcher_job"],
                 secret_volume=secret_volume,
-                termination_grace_period_secords=0,
+                termination_grace_period_seconds=0,
                 # Only launch a single pod
                 parallelism=1,
                 # Job succeeds when a single pod succeeds

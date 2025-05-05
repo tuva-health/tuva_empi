@@ -76,7 +76,10 @@ class K8sJobClientTestCase(unittest.TestCase):
         mock_stream.assert_not_called()
 
     @patch("main.util.k8s.watch.Watch.stream")
-    def test_wait_for_job_pods_success(self, mock_stream: MagicMock) -> None:
+    @patch("main.util.k8s.watch.Watch.stop")
+    def test_wait_for_job_pods_success(
+        self, mock_stop: MagicMock, mock_stream: MagicMock
+    ) -> None:
         """Method wait_for_job_pods returns a pod's PodState if stream returns an event with a pod with expected phase."""
         pod = MagicMock()
         pod.metadata.name = "test-pod"
@@ -95,6 +98,7 @@ class K8sJobClientTestCase(unittest.TestCase):
         self.assertEqual(pods[0].name, pod.metadata.name)
         self.assertEqual(pods[0].phase, pod.status.phase)
         mock_stream.assert_called()
+        mock_stop.assert_called()
 
     @patch("main.util.k8s.watch.Watch.stream")
     def test_wait_for_job_pods_timeout(self, mock_stream: MagicMock) -> None:

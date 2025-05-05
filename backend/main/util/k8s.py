@@ -110,7 +110,7 @@ class K8sJobClient:
         image_pull_policy: Literal["Always", "IfNotPresent", "Never"] = "IfNotPresent",
         command: Optional[list[str]] = None,
         secret_volume: Optional[SecretVolume] = None,
-        termination_grace_period_secords: int = 0,
+        termination_grace_period_seconds: int = 0,
         parallelism: int = 1,
         completions: int = 1,
         backoff_limit: int = 0,
@@ -146,7 +146,7 @@ class K8sJobClient:
                     metadata=V1ObjectMeta(labels={"job-name": job_name}),
                     spec=V1PodSpec(
                         restart_policy="Never",
-                        termination_grace_period_seconds=termination_grace_period_secords,
+                        termination_grace_period_seconds=termination_grace_period_seconds,
                         containers=[
                             V1Container(
                                 name=job_name,

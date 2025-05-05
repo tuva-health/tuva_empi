@@ -80,7 +80,7 @@ class K8sJobRunnerTestCase(unittest.TestCase):
                 secret_key=k8s_runner_config["job_config_secret_volume"]["secret_key"],
                 mount_path=k8s_runner_config["job_config_secret_volume"]["mount_path"],
             ),
-            termination_grace_period_secords=0,
+            termination_grace_period_seconds=0,
             parallelism=1,
             completions=1,
             backoff_limit=0,
@@ -255,8 +255,8 @@ class RunJobTestCase(unittest.TestCase):
         self.mock_stream_logs = patches["_stream_pod_logs_until_job_completion"]
         self.mock_get_state = patches["_get_pod_container_state"]
 
-    def test_run_job_completed(self) -> None:
-        """Method run_job should retrieve logs if the pod has already completed."""
+    def test_run_job_completed_success(self) -> None:
+        """Method run_job should retrieve logs if the pod has already completed/succeeded."""
         self.mock_k8s.wait_for_job_pods.return_value = [
             PodState(name="pod-1", phase="Succeeded")
         ]
@@ -285,7 +285,37 @@ class RunJobTestCase(unittest.TestCase):
         self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
         self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
 
-    def test_run_job_running(self) -> None:
+    def test_run_job_completed_failure(self) -> None:
+        """Method run_job should retrieve logs if the pod has already completed/failed."""
+        self.mock_k8s.wait_for_job_pods.return_value = [
+            PodState(name="pod-1", phase="Failed")
+        ]
+        self.mock_k8s.get_pod_logs.return_value = "line1\nline2"
+        self.mock_k8s.get_pod_container_states.return_value = [
+            ContainerState(
+                waiting=None,
+                terminated=ContainerTerminatedState(
+                    exit_code=1,
+                    finished_at="",
+                    reason="Error",
+                    started_at="",
+                ),
+            )
+        ]
+
+        result = self.runner.run_job()
+
+        self.assertEqual(result, JobResult(return_code=1, error_message="Error"))
+
+        self.mock_run_job.assert_called_once_with("matcher-job")
+        self.mock_wait_for_pod.assert_called_once_with("matcher-job")
+        self.mock_get_pod_logs.assert_called_once_with("pod-1")
+        self.mock_stream_logs.assert_not_called()
+        self.mock_get_state.assert_called_once_with("pod-1")
+        self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
+        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
+
+    def test_run_job_running_success(self) -> None:
         """Method run_job should stream logs if pod is running."""
         self.mock_k8s.wait_for_job_pods.return_value = [
             PodState(name="pod-1", phase="Running")
@@ -315,8 +345,8 @@ class RunJobTestCase(unittest.TestCase):
         self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
         self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
 
-    def test_run_job_failure(self) -> None:
-        """Method run_job should return error_message if the pod container fails."""
+    def test_run_job_running_failure(self) -> None:
+        """Method run_job should stream logs if the pod is running and return error_message if the pod container fails."""
         self.mock_k8s.wait_for_job_pods.return_value = [
             PodState(name="pod-1", phase="Running")
         ]
