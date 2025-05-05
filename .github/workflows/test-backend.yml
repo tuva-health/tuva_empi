@@ -51,7 +51,7 @@ jobs:
 
       - name: Test
         run: |
-          make test
+          make test-ci
 
       - name: Code coverage
         run: |

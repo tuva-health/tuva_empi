@@ -30,7 +30,10 @@ The Tuva EMPI matching service is a part of the same backend source as the API, 
 
 #### Supported Job Runners
 
-Currently, the only supported job runner is the `ProcessJobRunner` which runs jobs in a local child process.
+Currently, the supported job runners are:
+
+- `ProcessJobRunner`: runs jobs in local child processes
+- `K8sJobRunner`: runs jobs as Kubernetes jobs
 
 ## Identity Provider
 
