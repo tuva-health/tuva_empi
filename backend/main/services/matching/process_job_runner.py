@@ -1,9 +1,11 @@
 import logging
+import os
 import selectors
 import subprocess
 import sys
 from typing import Optional
 
+from main.config import get_config
 from main.services.matching.job_runner import JobResult, JobRunner
 
 
@@ -15,15 +17,19 @@ class ProcessJobRunner(JobRunner):
 
     def run_job(self) -> JobResult:
         process: Optional[subprocess.Popen[str]] = None
+        version = get_config().version
+        env = os.environ.copy()
+        env["TUVA_EMPI_EXPECTED_VERSION"] = version
 
         try:
             process = subprocess.Popen(
-                ["python", "manage.py", "run_matcher_job"],
+                ["python", "manage.py", "run_matching_job"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 close_fds=True,
                 text=True,
                 bufsize=1,
+                env=env,
             )
             try:
                 sel = selectors.DefaultSelector()

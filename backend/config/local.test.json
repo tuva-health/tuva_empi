@@ -1,10 +1,10 @@
 {
-    "env": "ci",
+    "env": "local-test",
     "db": {
         "user": "tuva_empi",
         "password": "tuva_empi",
         "name": "tuva_empi",
-        "host": "localhost",
+        "host": "db",
         "port": "5432"
     },
     "django": {

@@ -94,6 +94,33 @@ In the dev container:
 1. Check your identity: `aws sts get-caller-identity`
 1. Then follow the steps in `Installation` to run migrations and bootstrap
 
+#### Testing with kind
+
+If you'd like to test the K8sJobRunner, you can use kind. kind is included in the backend dev container. kind works by running k8s in Docker using your host's Docker instance (the Docker socket is mounted to the backend dev container).
+
+First make sure you are in the `backend` directory:
+
+1. `cd backend`
+
+Since kind uses the host's Docker instance, you only need to create a cluster once even after rebuilding the backend dev container:
+
+1. Create the cluster: `kind create cluster --name dev`
+1. Attach the kind cluster to our Docker Compose network: `docker network connect tuva-empi_app-network dev-control-plane`
+1. Create a k8s secret for the backend config file: `kubectl create secret generic tuva-empi-backend-dev-config --from-file=deployment.json=config/local.json`
+
+However, each time you rebuild the backend container, you need to update the kubeconfig:
+
+1. Add the kubeconfig from kind to our backend container: `mkdir -p ~/.kube && kind get kubeconfig --name dev > ~/.kube/config`
+1. Retrieve the cluster's CA public key: `mkdir -p ~/.kube/certs && docker exec dev-control-plane cat /etc/kubernetes/pki/ca.crt > ~/.kube/certs/kind-ca.crt`
+1. Update the k8s server so that we can access it from our backend container: `kubectl config set-cluster kind-dev --server=https://dev-control-plane:6443 --certificate-authority="$HOME/.kube/certs/kind-ca.crt"`
+
+Then you can build and load the backend image:
+
+1. Build the production image: `docker build --build-arg VERSION=$(<VERSION) -t tuva-empi-backend .`
+1. Load the production image: `kind load docker-image tuva-empi-backend:latest --name dev`
+
+Then you can test the K8sJobRunner by configuring the MatchingService to use it and starting the MatchingService in the backend dev container as usual. To run the MatchingService, don't forget the job image env variable: `TUVA_EMPI_MATCHING_SERVICE__K8S_JOB_RUNNER__JOB_IMAGE=tuva-empi-backend:latest make matching-service-dev`.
+
 ### Migrations
 
 To re-apply migrations from scratch:

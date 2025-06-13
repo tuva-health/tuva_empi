@@ -6,11 +6,12 @@ from django.db import connection
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
+from main.config import AppConfig, JobRunnerType, MatchingServiceConfig
 from main.models import Config, Job, JobStatus
 from main.services.empi.empi_service import EMPIService
 from main.services.matching.job_runner import JobResult
 from main.services.matching.matching_service import MatchingService
-from main.tests.util.concurrency import run_with_lock_contention
+from main.tests.testing.concurrency import run_with_lock_contention
 
 
 class MatchingServiceTestCase(TestCase):
@@ -33,7 +34,13 @@ class MatchingServiceTestCase(TestCase):
     }
     job: Job
 
-    def setUp(self) -> None:
+    @patch("main.services.matching.matching_service.get_config")
+    def setUp(self, mock_get_config: MagicMock) -> None:
+        mock_get_config.return_value = AppConfig.model_construct(
+            matching_service=MatchingServiceConfig.model_construct(
+                job_runner=JobRunnerType.process,
+            ),
+        )
         self.matching_service = MatchingService()
         self.config = Config.objects.create(**self.config_partial)
 
@@ -57,7 +64,7 @@ class MatchingServiceTestCase(TestCase):
 
         # Failure is logged
         self.matching_service.logger.error.assert_called_with(
-            "Unexpected job runner failure: Out of memory\n"
+            "Unexpected job runner failure: return_code=1 error_message='Out of memory\n'"
         )
         self.assertTrue(
             any(
@@ -142,7 +149,15 @@ class MatchingServiceConcurrencyTestCase(TransactionTestCase):
         # Run run_next_job and close DB connection
         def run_next_job() -> None:
             try:
-                MatchingService().run_next_job()
+                with patch(
+                    "main.services.matching.matching_service.get_config"
+                ) as mock_get_config:
+                    mock_get_config.return_value = AppConfig.model_construct(
+                        matching_service=MatchingServiceConfig.model_construct(
+                            job_runner=JobRunnerType.process,
+                        ),
+                    )
+                    MatchingService().run_next_job()
             finally:
                 connection.close()
 

@@ -155,6 +155,7 @@ dmypy.json
 cython_debug/
 
 # Config files used for local development
-config
-! config/local.json.example
-! config/ci.json
+config/**
+!config/local.json.example
+!config/ci.json
+!config/local.test.json

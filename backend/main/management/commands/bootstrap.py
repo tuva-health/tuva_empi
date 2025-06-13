@@ -20,7 +20,7 @@ class Command(BaseCommand):
             return
 
         identity_service = IdentityService()
-        admin_email = get_config()["initial_setup"]["admin_email"]
+        admin_email = get_config().initial_setup.admin_email
         users = [
             user for user in identity_service.get_users() if user.email == admin_email
         ]

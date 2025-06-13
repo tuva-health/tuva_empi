@@ -75,6 +75,14 @@ Once the API container has been deployed, you can deploy the Matching Service co
 You should fully deploy a new version of the API container before deploying the corresponding version of the matching service container.
 :::
 
+#### K8s Job Runner
+
+When deploying the Matching Service configured to use the `K8sJobRunner`, it's necessary to supply an additional environment variable, `TUVA_EMPI_MATCHING_SERVICE__K8S_JOB_RUNNER__JOB_IMAGE`, which should be the same image that is used to deploy the Matching Service.
+
+:::caution
+The Matching Service and the Matching Job images should always be the same. Otherwise, the Matching Job will refuse to run.
+:::
+
 ### Frontend
 
 Once the API container has been deployed, you can deploy the frontend container.

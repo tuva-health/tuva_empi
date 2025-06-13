@@ -22,7 +22,7 @@ django_stubs_ext.monkeypatch()
 
 config = get_config()
 
-print("Tuva EMPI config profile: ", config["env"])
+print("Tuva EMPI config profile: ", config.env)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -32,14 +32,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config["django"]["secret_key"]
+SECRET_KEY = config.django.secret_key
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config["django"].get("debug", False)
+DEBUG = config.django.debug
 
 print("Debug mode enabled: ", DEBUG)
 
-ALLOWED_HOSTS: list[str] = config["django"]["allowed_hosts"]
+ALLOWED_HOSTS: list[str] = config.django.allowed_hosts
 
 # Application definition
 
@@ -117,11 +117,11 @@ WSGI_APPLICATION = "tuva_empi.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": config["db"]["name"],
-        "USER": config["db"]["user"],
-        "PASSWORD": config["db"]["password"],
-        "HOST": config["db"]["host"],
-        "PORT": config["db"]["port"],
+        "NAME": config.db.name,
+        "USER": config.db.user,
+        "PASSWORD": config.db.password,
+        "HOST": config.db.host,
+        "PORT": config.db.port,
     }
 }
 
@@ -225,8 +225,8 @@ LOGGING = {
     },
 }
 
-CORS_ALLOWED_ORIGINS = config["django"].get("cors_allowed_origins", [])
-CORS_ALLOW_ALL_ORIGINS = True if config.get("env") == "local" else False
+CORS_ALLOWED_ORIGINS = config.django.cors_allowed_origins
+CORS_ALLOW_ALL_ORIGINS = True if config.env == "local" else False
 
 if CORS_ALLOW_ALL_ORIGINS:
     print("**WARNING** CORS_ALLOW_ALL_ORIGINS set to True")

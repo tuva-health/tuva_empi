@@ -12,6 +12,17 @@
         "secret_key": "django-insecure-$@j@kbe1r&e!g*%kz(#mwje1z+6$fs24m6h4rukhkmsi))l8vg",
         "allowed_hosts": [".localhost", "127.0.0.1", "[::1]", "oauth2-proxy"]
     },
+    "matching_service": {
+        "job_runner": "process",
+        "k8s_job_runner": {
+            "job_image_pull_policy": "Never",
+            "job_config_secret_volume": {
+                "secret_name": "tuva-empi-backend-dev-config",
+                "secret_key": "deployment.json",
+                "mount_path": "/usr/local/etc/tuva-empi"
+            }
+        }
+    },
     "idp": {
         "backend": "keycloak",
         "aws_cognito": {
