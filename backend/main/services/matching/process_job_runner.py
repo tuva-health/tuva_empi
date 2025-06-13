@@ -17,7 +17,7 @@ class ProcessJobRunner(JobRunner):
 
     def run_job(self) -> JobResult:
         process: Optional[subprocess.Popen[str]] = None
-        version = get_config()["version"]
+        version = get_config().version
         env = os.environ.copy()
         env["TUVA_EMPI_EXPECTED_VERSION"] = version
 

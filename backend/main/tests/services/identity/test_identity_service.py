@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 from django.test import TestCase
 from django.utils import timezone
 
+from main.config import AppConfig, IdpBackend, IdpConfig, KeycloakConfig
 from main.models import User, UserRole
 from main.services.identity.identity_provider import IdpUser
 from main.services.identity.identity_service import IdentityService
@@ -23,11 +24,11 @@ class IdentityServiceTests(TestCase):
         self, mock_get_config: Mock, mock_keycloak: Mock
     ) -> None:
         """Test get_users returns Keycloak users if Keycloak backend is configured."""
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "keycloak",
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend=IdpBackend.keycloak,
+            ),
+        )
         mock_keycloak.return_value.get_users.return_value = self.idp_users
 
         users = IdentityService().get_users()
@@ -40,7 +41,11 @@ class IdentityServiceTests(TestCase):
 
     @patch("main.services.identity.identity_service.get_config")
     def test_get_users_invalid_backend(self, mock_get_config: Mock) -> None:
-        mock_get_config.return_value = {"idp": {"backend": "invalid-backend"}}
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend="invalid-backend",  # type: ignore[arg-type]
+            ),
+        )
 
         with self.assertRaises(Exception) as ctx:
             IdentityService().get_users()
@@ -80,17 +85,17 @@ class IdentityServiceTests(TestCase):
     @patch("main.services.identity.identity_service.get_config")
     def test_get_jwt_config_keycloak(self, mock_get_config: Mock) -> None:
         """Test get_jwt_config gets the JWT config from the configured backend."""
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "keycloak",
-                "keycloak": {
-                    "jwt_header": "Authorization",
-                    "jwks_url": "https://example.com/jwks.json",
-                    "client_id": "client-id",
-                    "jwt_aud": "client-id",
-                },
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend=IdpBackend.keycloak,
+                keycloak=KeycloakConfig.model_construct(  # type: ignore[call-arg]
+                    jwt_header="Authorization",
+                    jwks_url="https://example.com/jwks.json",
+                    client_id="client-id",
+                    jwt_aud="client-id",
+                ),
+            ),
+        )
 
         config = IdentityService().get_jwt_config()
 
@@ -102,11 +107,11 @@ class IdentityServiceTests(TestCase):
     @patch("main.services.identity.identity_service.get_config")
     def test_get_jwt_config_invalid_backend(self, mock_get_config: Mock) -> None:
         """Test get_jwt_config throws error if backend isn't configured."""
-        mock_get_config.return_value = {
-            "idp": {
-                "backend": "invalid-backend",
-            }
-        }
+        mock_get_config.return_value = AppConfig.model_construct(
+            idp=IdpConfig.model_construct(
+                backend="invalid-backend",  # type: ignore[arg-type]
+            ),
+        )
 
         with self.assertRaises(Exception) as ctx:
             IdentityService().get_jwt_config()

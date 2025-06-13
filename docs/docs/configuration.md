@@ -78,4 +78,4 @@ There are also two other environment variables:
 
 - `TUVA_EMPI_CONFIG_FILE`: Path to Tuva EMPI backend config file
 - `TUVA_EMPI_CONFIG_AWS_SECRET_ARN`: ARN of AWS Secrets Manager secret containing the config file (`TUVA_EMPI_CONFIG_FILE` takes priority)
-- `TUVA_EMPI_MATCHING_SERVICE_K8S_JOB_RUNNER_JOB_IMAGE`: The image used for the Matching Job when using the `K8sJobRunner`
+- `TUVA_EMPI_MATCHING_SERVICE__K8S_JOB_RUNNER__JOB_IMAGE`: The image used for the Matching Job when using the `K8sJobRunner`

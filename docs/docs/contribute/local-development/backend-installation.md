@@ -119,7 +119,7 @@ Then you can build and load the backend image:
 1. Build the production image: `docker build --build-arg VERSION=$(<VERSION) -t tuva-empi-backend .`
 1. Load the production image: `kind load docker-image tuva-empi-backend:latest --name dev`
 
-Then you can test the K8sJobRunner by configuring the MatchingService to use it and starting the MatchingService in the backend dev container as usual. To run the MatchingService, don't forget the job image env variable: `TUVA_EMPI_MATCHING_SERVICE_K8S_JOB_RUNNER_JOB_IMAGE=tuva-empi-backend:latest make matching-service-dev`.
+Then you can test the K8sJobRunner by configuring the MatchingService to use it and starting the MatchingService in the backend dev container as usual. To run the MatchingService, don't forget the job image env variable: `TUVA_EMPI_MATCHING_SERVICE__K8S_JOB_RUNNER__JOB_IMAGE=tuva-empi-backend:latest make matching-service-dev`.
 
 ### Migrations
 

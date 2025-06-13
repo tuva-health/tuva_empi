@@ -18,7 +18,11 @@ class CognitoIdentityProvider(IdentityProvider):
         config = get_config()
 
         self.logger.info("Retrieving users from AWS Cognito IDP backend")
-        cognito_user_pool_id = config["idp"]["aws_cognito"]["cognito_user_pool_id"]
+
+        cognito_config = config.idp.aws_cognito
+        assert cognito_config
+
+        cognito_user_pool_id = cognito_config.cognito_user_pool_id
         cognito_users = self.cognito.list_users(cognito_user_pool_id)
 
         return [
