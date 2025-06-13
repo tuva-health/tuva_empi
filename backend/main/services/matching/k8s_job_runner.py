@@ -1,4 +1,6 @@
 import logging
+import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
@@ -25,23 +27,35 @@ class K8sJobRunner(JobRunner):
     def _run_job(self, job_name: str) -> None:
         self.logger.info(f"Creating K8s job {job_name}")
 
-        config = get_config()["matching_service"]["k8s_job_runner"]
+        config = get_config()
+        version = config["version"]
+        runner_config = config["matching_service"]["k8s_job_runner"]
         secret_volume = (
             SecretVolume(
-                secret_name=config["job_config_secret_volume"]["secret_name"],
-                secret_key=config["job_config_secret_volume"]["secret_key"],
-                mount_path=config["job_config_secret_volume"]["mount_path"],
+                secret_name=runner_config["job_config_secret_volume"]["secret_name"],
+                secret_key=runner_config["job_config_secret_volume"]["secret_key"],
+                mount_path=runner_config["job_config_secret_volume"]["mount_path"],
             )
-            if config["job_config_secret_volume"]
+            if runner_config["job_config_secret_volume"]
             else None
         )
+        env = {"TUVA_EMPI_EXPECTED_VERSION": version}
+
+        if secret_volume:
+            env["TUVA_EMPI_CONFIG_FILE"] = str(
+                Path(secret_volume.mount_path) / secret_volume.secret_key
+            )
+        elif "TUVA_EMPI_CONFIG_AWS_SECRET_ARN" in os.environ:
+            env["TUVA_EMPI_CONFIG_AWS_SECRET_ARN"] = os.environ[
+                "TUVA_EMPI_CONFIG_AWS_SECRET_ARN"
+            ]
 
         try:
             self.k8s.run_job(
                 job_name=job_name,
-                image=config["job_image"],
-                image_pull_policy=config["job_image_pull_policy"],
-                command=["python", "manage.py", "run_matcher_job"],
+                image=runner_config["job_image"],
+                image_pull_policy=runner_config["job_image_pull_policy"],
+                args=["matching-job"],
                 secret_volume=secret_volume,
                 termination_grace_period_seconds=0,
                 # Only launch a single pod
@@ -50,18 +64,10 @@ class K8sJobRunner(JobRunner):
                 completions=1,
                 # Retry 0 times before considering Job as failed
                 backoff_limit=0,
-                env=(
-                    {
-                        "TUVA_EMPI_CONFIG_FILE": str(
-                            Path(secret_volume.mount_path) / secret_volume.secret_key
-                        )
-                    }
-                    if secret_volume
-                    else {}
-                ),
+                env=env,
                 service_account_name=(
-                    config["job_service_account_name"]
-                    if "job_service_account_name" in config
+                    runner_config["job_service_account_name"]
+                    if "job_service_account_name" in runner_config
                     else None
                 ),
             )
@@ -152,7 +158,7 @@ class K8sJobRunner(JobRunner):
         NOTE: If anything fails interacting with the K8s API, we just throw and allow the
         MatchingService to retry.
         """
-        job_name = "matcher-job"
+        job_name = "matching-job"
 
         # Run the K8s job
         self._run_job(job_name)
@@ -195,6 +201,8 @@ class K8sJobRunner(JobRunner):
                 f" Pod {pod_name} container exited with code {return_code} and reason {error_message}."
                 f" See pod logs for more details"
             )
+            # Slow down retry
+            time.sleep(5)
 
         # Delete job and wait for deletion
         self.k8s.delete_job(job_name)

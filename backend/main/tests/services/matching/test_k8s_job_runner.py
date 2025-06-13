@@ -45,6 +45,7 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         self.config = cast(
             ConfigDict,
             {
+                "version": "test-version",
                 "matching_service": {
                     "k8s_job_runner": {
                         "job_image": "tuva-empi:latest",
@@ -55,7 +56,7 @@ class K8sJobRunnerTestCase(unittest.TestCase):
                             "mount_path": "/etc/config",
                         },
                     }
-                }
+                },
             },
         )
         mock_get_config.return_value = self.config
@@ -66,13 +67,13 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         """Method _run_job should call K8sJobClient.run_job with expected parameters."""
         k8s_runner_config = self.config["matching_service"]["k8s_job_runner"]
 
-        self.runner._run_job("matcher-job")
+        self.runner._run_job("matching-job")
 
         self.mock_k8s.run_job.assert_called_once_with(
-            job_name="matcher-job",
+            job_name="matching-job",
             image=k8s_runner_config["job_image"],
             image_pull_policy=k8s_runner_config["job_image_pull_policy"],
-            command=["python", "manage.py", "run_matcher_job"],
+            args=["matching-job"],
             secret_volume=SecretVolume(
                 secret_name=k8s_runner_config["job_config_secret_volume"][
                     "secret_name"
@@ -85,10 +86,11 @@ class K8sJobRunnerTestCase(unittest.TestCase):
             completions=1,
             backoff_limit=0,
             env={
+                "TUVA_EMPI_EXPECTED_VERSION": "test-version",
                 "TUVA_EMPI_CONFIG_FILE": str(
                     Path(k8s_runner_config["job_config_secret_volume"]["mount_path"])
                     / k8s_runner_config["job_config_secret_volume"]["secret_key"]
-                )
+                ),
             },
             service_account_name=None,
         )
@@ -97,12 +99,12 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         """Method _run_job should ignore a K8sJobAlreadyExists exception."""
         self.mock_k8s.run_job.side_effect = K8sJobAlreadyExists()
 
-        self.runner._run_job("matcher-job")
+        self.runner._run_job("matching-job")
 
         self.mock_k8s.run_job.assert_called_once()
 
         self.mock_logger.info.assert_has_calls(
-            [call("K8s job matcher-job already exists. Resuming where we left off")]
+            [call("K8s job matching-job already exists. Resuming where we left off")]
         )
 
     def test__run_job_other_exception(self) -> None:
@@ -110,14 +112,14 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         self.mock_k8s.run_job.side_effect = ValueError("test")
 
         with self.assertRaises(ValueError):
-            self.runner._run_job("matcher-job")
+            self.runner._run_job("matching-job")
 
     def test__wait_for_pod_success(self) -> None:
         """Method _wait_for_pod should return the PodState from K8sJobClient.wait_for_job_pods."""
         pod_state = PodState(name="pod-name", phase="Running")
         self.mock_k8s.wait_for_job_pods.return_value = [pod_state]
 
-        result = self.runner._wait_for_pod("matcher-job")
+        result = self.runner._wait_for_pod("matching-job")
 
         self.assertEqual(result, pod_state)
 
@@ -130,12 +132,12 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         self.mock_k8s.get_pod_container_states.return_value = [container_state]
 
         with self.assertRaises(TimeoutError):
-            self.runner._wait_for_pod("matcher-job")
+            self.runner._wait_for_pod("matching-job")
 
         self.mock_logger.exception.assert_has_calls(
             [
                 call(
-                    f"Timed out waiting for K8s job matcher-job pod."
+                    f"Timed out waiting for K8s job matching-job pod."
                     f" Pod container state: {asdict(container_state)}"
                 )
             ]
@@ -165,9 +167,9 @@ class K8sJobRunnerTestCase(unittest.TestCase):
         self.mock_k8s.stream_pod_logs.return_value = ["log"]
 
         with patch("builtins.print") as mock_print:
-            self.runner._stream_pod_logs_until_job_completion("matcher-job", "pod-1")
+            self.runner._stream_pod_logs_until_job_completion("matching-job", "pod-1")
 
-        self.mock_k8s.wait_for_job_completion.assert_called_once_with("matcher-job")
+        self.mock_k8s.wait_for_job_completion.assert_called_once_with("matching-job")
         mock_print.assert_called_with("pod-1: log")
 
     def test__get_pod_container_state(self) -> None:
@@ -277,13 +279,13 @@ class RunJobTestCase(unittest.TestCase):
 
         self.assertEqual(result, JobResult(return_code=0, error_message=None))
 
-        self.mock_run_job.assert_called_once_with("matcher-job")
-        self.mock_wait_for_pod.assert_called_once_with("matcher-job")
+        self.mock_run_job.assert_called_once_with("matching-job")
+        self.mock_wait_for_pod.assert_called_once_with("matching-job")
         self.mock_get_pod_logs.assert_called_once_with("pod-1")
         self.mock_stream_logs.assert_not_called()
         self.mock_get_state.assert_called_once_with("pod-1")
-        self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
-        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
+        self.mock_k8s.delete_job.assert_called_once_with("matching-job")
+        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matching-job")
 
     def test_run_job_completed_failure(self) -> None:
         """Method run_job should retrieve logs if the pod has already completed/failed."""
@@ -307,13 +309,13 @@ class RunJobTestCase(unittest.TestCase):
 
         self.assertEqual(result, JobResult(return_code=1, error_message="Error"))
 
-        self.mock_run_job.assert_called_once_with("matcher-job")
-        self.mock_wait_for_pod.assert_called_once_with("matcher-job")
+        self.mock_run_job.assert_called_once_with("matching-job")
+        self.mock_wait_for_pod.assert_called_once_with("matching-job")
         self.mock_get_pod_logs.assert_called_once_with("pod-1")
         self.mock_stream_logs.assert_not_called()
         self.mock_get_state.assert_called_once_with("pod-1")
-        self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
-        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
+        self.mock_k8s.delete_job.assert_called_once_with("matching-job")
+        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matching-job")
 
     def test_run_job_running_success(self) -> None:
         """Method run_job should stream logs if pod is running."""
@@ -337,13 +339,13 @@ class RunJobTestCase(unittest.TestCase):
 
         self.assertEqual(result, JobResult(return_code=0, error_message=None))
 
-        self.mock_run_job.assert_called_once_with("matcher-job")
-        self.mock_wait_for_pod.assert_called_once_with("matcher-job")
+        self.mock_run_job.assert_called_once_with("matching-job")
+        self.mock_wait_for_pod.assert_called_once_with("matching-job")
         self.mock_get_pod_logs.assert_not_called()
-        self.mock_stream_logs.assert_called_once_with("matcher-job", "pod-1")
+        self.mock_stream_logs.assert_called_once_with("matching-job", "pod-1")
         self.mock_get_state.assert_called_once_with("pod-1")
-        self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
-        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
+        self.mock_k8s.delete_job.assert_called_once_with("matching-job")
+        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matching-job")
 
     def test_run_job_running_failure(self) -> None:
         """Method run_job should stream logs if the pod is running and return error_message if the pod container fails."""
@@ -367,10 +369,10 @@ class RunJobTestCase(unittest.TestCase):
 
         self.assertEqual(result, JobResult(return_code=1, error_message="Error"))
 
-        self.mock_run_job.assert_called_once_with("matcher-job")
-        self.mock_wait_for_pod.assert_called_once_with("matcher-job")
+        self.mock_run_job.assert_called_once_with("matching-job")
+        self.mock_wait_for_pod.assert_called_once_with("matching-job")
         self.mock_get_pod_logs.assert_not_called()
-        self.mock_stream_logs.assert_called_once_with("matcher-job", "pod-1")
+        self.mock_stream_logs.assert_called_once_with("matching-job", "pod-1")
         self.mock_get_state.assert_called_once_with("pod-1")
-        self.mock_k8s.delete_job.assert_called_once_with("matcher-job")
-        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matcher-job")
+        self.mock_k8s.delete_job.assert_called_once_with("matching-job")
+        self.mock_k8s.wait_for_job_deletion.assert_called_once_with("matching-job")

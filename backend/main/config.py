@@ -2,7 +2,7 @@ import json
 import os
 from enum import Enum
 from functools import cache
-from typing import Literal, Optional, TypedDict, cast
+from typing import Literal, NotRequired, Optional, TypedDict, cast
 
 
 class DbConfigDict(TypedDict):
@@ -71,11 +71,12 @@ class JobRunnerType(Enum):
 
 class MatchingServiceConfigDict(TypedDict):
     job_runner: Literal[JobRunnerType.process, JobRunnerType.k8s]
-    k8s_job_runner: K8sJobRunnerConfigDict
+    k8s_job_runner: NotRequired[K8sJobRunnerConfigDict]
 
 
 class ConfigDict(TypedDict):
     env: str
+    version: str
     db: DbConfigDict
     django: DjangoConfigDict
     idp: IdpConfigDict
@@ -86,7 +87,21 @@ class ConfigDict(TypedDict):
 # FIXME: Add validation with DRF serializer or Pydantic model
 @cache
 def get_config() -> ConfigDict:
+    with open("VERSION", "r") as f:
+        version = f.read().strip()
+
     with open(os.environ["TUVA_EMPI_CONFIG_FILE"], "r") as f:
         config = cast(ConfigDict, json.load(f))
+        config["version"] = version
+
+        if (
+            "matching_service" in config
+            and config["matching_service"].get("job_runner") == JobRunnerType.k8s.value
+        ):
+            # We don't accept job_image via config file since it's easy to let the matching service and
+            # job versions get out of sync
+            config["matching_service"]["k8s_job_runner"]["job_image"] = os.environ.get(
+                "TUVA_EMPI_MATCHING_SERVICE_K8S_JOB_RUNNER_JOB_IMAGE", ""
+            )
 
         return config
