@@ -24,7 +24,7 @@ class ProcessJobRunnerTestCase(TestCase):
     job_partial = {
         "created": now,
         "updated": now,
-        "s3_uri": "s3://tuva-empi-example/test",
+        "source_uri": "s3://tuva-empi-example/test",
         "status": JobStatus.new,
         "reason": None,
     }

@@ -6,7 +6,6 @@ from django.urls import reverse
 
 from main.models import User, UserRole
 from main.services.empi.empi_service import InvalidPersonRecordFileFormat
-from main.util.s3 import ObjectDoesNotExist, UploadError
 
 
 class PersonRecordsTestCase(TestCase):
@@ -46,13 +45,14 @@ class PersonRecordsTestCase(TestCase):
         response = self.client.post(
             url,
             {"s3_uri": "s3://tuva-health-example/test", "config_id": "cfg_1"},
+            content_type="application/unknown",
         )
         self.assertEqual(response.status_code, 415)
         self.assertDictEqual(
             response.json(),
             {
                 "error": {
-                    "message": 'Unsupported media type "multipart/form-data; boundary=BoUnDaRyStRiNg" in request.',
+                    "message": 'Unsupported media type "application/unknown" in request.',
                 }
             },
         )
@@ -136,14 +136,31 @@ class PersonRecordsTestCase(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400)
+
         self.assertDictEqual(
             response.json(),
             {
                 "error": {
                     "details": [
-                        {"field": "s3_uri", "message": "This field is required."},
                         {"field": "config_id", "message": "This field is required."},
                     ],
+                    "message": "Validation failed",
+                }
+            },
+        )
+
+        response = self.client.post(
+            url,
+            {"config_id": "cfg_1"},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        self.assertDictEqual(
+            response.json(),
+            {
+                "error": {
+                    "details": [{"message": "Must provide either 's3_uri' or 'file'."}],
                     "message": "Validation failed",
                 }
             },
@@ -408,7 +425,7 @@ class PersonRecordsTestCase(TestCase):
     def test_import_s3_object_not_found(self, mock_empi: Any) -> None:
         """Tests import_person_records handles invalid file format."""
         mock_empi_obj = mock_empi.return_value
-        mock_empi_obj.import_person_records.side_effect = ObjectDoesNotExist(
+        mock_empi_obj.import_person_records.side_effect = FileNotFoundError(
             "S3 object does not exist"
         )
 
@@ -533,29 +550,6 @@ class ExportPersonRecordsTestCase(TestCase):
         )
 
     @patch("main.views.person_records.EMPIService")
-    def test_export_validation_missing_fields(self, mock_empi: Any) -> None:
-        """Tests export_person_records rejects request methods with missing fields."""
-        url = reverse("export_person_records")
-
-        response = self.client.post(
-            url,
-            "",
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertDictEqual(
-            response.json(),
-            {
-                "error": {
-                    "details": [
-                        {"field": "s3_uri", "message": "This field is required."},
-                    ],
-                    "message": "Validation failed",
-                }
-            },
-        )
-
-    @patch("main.views.person_records.EMPIService")
     def test_export_invalid_s3_uri(self, mock_empi: Any) -> None:
         """Tests export_person_records s3_uri validation fails."""
         url = reverse("export_person_records")
@@ -622,7 +616,7 @@ class ExportPersonRecordsTestCase(TestCase):
     def test_export_s3_upload_error(self, mock_empi: Any) -> None:
         """Tests export_person_records handles S3 upload errors."""
         mock_empi_obj = mock_empi.return_value
-        mock_empi_obj.export_person_records.side_effect = UploadError(
+        mock_empi_obj.export_person_records.side_effect = FileNotFoundError(
             "Failed to upload to S3"
         )
 
