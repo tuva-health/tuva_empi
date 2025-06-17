@@ -52,7 +52,13 @@ class Job(models.Model):
     created = models.DateTimeField(db_default=TransactionNow())
     updated = models.DateTimeField(db_default=TransactionNow())
     config = models.ForeignKey(Config, on_delete=models.DO_NOTHING)
-    s3_uri = models.TextField()
+    # DEPRECATED
+    # TODO: s3_uri has been deleted from the Django model and migration state using
+    # SeparateDatabaseAndState (see: 0009_remove_job_s3_uri_state.py). In the next release,
+    # we need to move s3_uri values to the source_uri column, make source_uri non-nullable
+    # and then delete s3_uri from the DB.
+    # s3_uri = models.TextField(null=True)
+    source_uri = models.TextField(null=True)
     status = models.TextField(choices=JobStatus)
     reason = models.TextField(null=True)
 
