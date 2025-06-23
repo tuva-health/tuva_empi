@@ -5,8 +5,9 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Mapping, NotRequired, Optional, TypedDict, cast
+from typing import IO, Any, Mapping, NotRequired, Optional, TypedDict, cast
 
+from django.core.files.uploadedfile import UploadedFile
 from django.db import connection, transaction
 from django.db.backends.utils import CursorWrapper
 from django.db.models import F, Field
@@ -33,7 +34,7 @@ from main.models import (
     SplinkResult,
     User,
 )
-from main.util.s3 import S3Client
+from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
 from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
 
 
@@ -160,23 +161,21 @@ class PersonSummaryDict(TypedDict):
 
 class EMPIService:
     logger: logging.Logger
-    s3: S3Client
 
-    def __init__(self, s3: Optional[S3Client] = None) -> None:
+    def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
-        self.s3 = s3 or S3Client()
 
     def create_config(self, config: PartialConfigDict) -> Config:
         return Config.objects.create(**config)
 
-    def create_job(self, s3_uri: str, config_id: int) -> Job:
+    def create_job(self, source: str | UploadedFile, config_id: int) -> Job:
         return Job.objects.create(
-            s3_uri=s3_uri,
+            source_uri=get_uri(source),
             config_id=config_id,
             status=JobStatus.new,
         )
 
-    def import_person_records(self, s3_uri: str, config_id: int) -> int:
+    def import_person_records(self, source: str | UploadedFile, config_id: int) -> int:
         self.logger.info("Importing person records")
 
         try:
@@ -187,7 +186,9 @@ class EMPIService:
                 and f.column not in {"id", "created", "job_id", "row_number", "sha256"}
             ]
             expected_csv_header = ",".join(csv_col_names)
-            csv_header = next(self.s3.get_object_lines(s3_uri)).decode("utf-8")
+
+            with open_source(source) as f:
+                csv_header = f.readline().decode("utf-8").strip()
 
             if csv_header != expected_csv_header:
                 msg = (
@@ -198,12 +199,10 @@ class EMPIService:
                 self.logger.error(msg)
                 raise InvalidPersonRecordFileFormat(msg)
 
-            chunks = self.s3.get_object_chunks(s3_uri)
-
             with transaction.atomic(durable=True):
                 with connection.cursor() as cursor:
                     # Create job
-                    job = self.create_job(s3_uri, config_id)
+                    job = self.create_job(source, config_id)
 
                     table = PersonRecordStaging._meta.db_table
                     temp_table = table + "_temp"
@@ -229,8 +228,8 @@ class EMPIService:
                         ),
                     )
 
-                    with cursor.copy(copy_sql) as copy:
-                        for chunk in chunks:
+                    with open_source(source) as f, cursor.copy(copy_sql) as copy:
+                        while chunk := f.read(DEFAULT_BUFFER_SIZE):
                             copy.write(chunk)
 
                     # Load data from temporary table into PersonRecordStaging table,
@@ -1291,11 +1290,11 @@ class EMPIService:
 
             return persons[0]
 
-    def export_person_records(self, s3_uri: str) -> None:
+    def export_person_records(self, sink: str | IO[bytes]) -> None:
         """Export person records to S3 in CSV format.
 
         Args:
-            s3_uri: The S3 URI to export to.
+            sink: The data sink URI or file.
 
         Raises:
             UploadError: If the upload fails.
@@ -1331,19 +1330,22 @@ class EMPIService:
 
             self.logger.info(f"Retrieved {cursor.rowcount} person records")
 
-            # Create CSV content in memory
-            output = io.StringIO(newline="")
-            writer = csv.writer(output, lineterminator="\n")
+            # Write CSV content to FileProvider stream
+            with open_sink(sink) as f:
+                text_stream = io.TextIOWrapper(f, encoding="utf-8", newline="")
+                writer = csv.writer(text_stream, lineterminator="\n")
 
-            # Write headers
-            column_names = [c.name for c in cursor.description]
-            writer.writerow(column_names)
+                # Write headers
+                column_names = [c.name for c in cursor.description]
+                writer.writerow(column_names)
 
-            # Write data
-            for row in cursor.fetchall():
-                writer.writerow(row)
+                # Write data
+                for row in cursor.fetchall():
+                    writer.writerow(row)
 
-            # Upload to S3
-            self.s3.put_object(s3_uri, output.getvalue().encode("utf-8"))
+                text_stream.flush()
+                text_stream.detach()
 
-            self.logger.info(f"Uploaded {cursor.rowcount} person records to {s3_uri}")
+            self.logger.info(
+                f"Wrote {cursor.rowcount} person records to {get_uri(sink) if isinstance(sink, str) else "buffer"}"
+            )

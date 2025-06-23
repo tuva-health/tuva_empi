@@ -1,10 +1,12 @@
+import io
 import os
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as tz
-from typing import Any, Iterator, Mapping, Optional, cast
-from unittest.mock import patch
+from typing import IO, Any, Iterator, Mapping, Optional, cast
+from unittest.mock import MagicMock, patch
 
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
@@ -43,32 +45,16 @@ from main.services.empi.empi_service import (
 )
 from main.tests.testing.concurrency import run_with_lock_contention
 from main.util.dict import select_keys
-from main.util.s3 import S3Client, UploadError
 
 
-class MockFSS3Client:
-    def __init__(self, filename: str) -> None:
-        self.filename = filename
+def get_path(path: str) -> str:
+    return os.path.join(os.path.dirname(__file__), path)
 
-    def get_object_chunks(self, s3_uri: str) -> Iterator[bytes]:
-        filepath = os.path.join(os.path.dirname(__file__), self.filename)
 
-        def read() -> Iterator[bytes]:
-            with open(filepath, "rb") as f:
-                while chunk := f.read(1024):
-                    yield chunk
-
-        return read()
-
-    def get_object_lines(self, s3_uri: str) -> Iterator[bytes]:
-        filepath = os.path.join(os.path.dirname(__file__), self.filename)
-
-        def read() -> Iterator[bytes]:
-            with open(filepath, "r") as f:
-                while line := f.readline():
-                    yield line.rstrip("\n").encode()
-
-        return read()
+@contextmanager
+def mock_open(path: str) -> Iterator[IO[bytes]]:
+    with open(get_path(path), "rb") as f:
+        yield io.BytesIO(f.read())
 
 
 class ImportPersonRecordsTestCase(TestCase):
@@ -84,10 +70,13 @@ class ImportPersonRecordsTestCase(TestCase):
             }
         )
 
-    def test_import(self) -> None:
-        empi = EMPIService(
-            cast(S3Client, MockFSS3Client("../../resources/raw-person-records.csv"))
+    @patch("main.services.empi.empi_service.open_source")
+    def test_import(self, mock_open_source: MagicMock) -> None:
+        mock_open_source.side_effect = lambda _: mock_open(
+            "../../resources/raw-person-records.csv"
         )
+
+        empi = EMPIService()
         s3_uri = "s3://tuva-health-example/test"
 
         empi.import_person_records(s3_uri, self.config.id)
@@ -146,7 +135,9 @@ class ImportPersonRecordsTestCase(TestCase):
         )
 
         self.assertEqual(
-            rec.job.s3_uri, s3_uri, "Job s3_uri field should equal provided s3_uri"
+            rec.job.source_uri,
+            s3_uri,
+            "Job source_uri field should equal provided s3_uri",
         )
 
         self.assertEqual(
@@ -157,18 +148,16 @@ class ImportPersonRecordsTestCase(TestCase):
             rec.job.config_id, self.config.id, "Job.config matches provided config"
         )
 
-    def test_import_invalid_file_format(self) -> None:
+    @patch("main.services.empi.empi_service.open_source")
+    def test_import_invalid_file_format(self, mock_open_source: MagicMock) -> None:
+        mock_open_source.side_effect = lambda _: mock_open(
+            "../../resources/raw-person-records-missing-phone-col.csv"
+        )
+
         s3_uri = "s3://tuva-health-example/test"
 
         # Missing phone column only in header
-        empi = EMPIService(
-            cast(
-                S3Client,
-                MockFSS3Client(
-                    "../../resources/raw-person-records-missing-phone-col.csv"
-                ),
-            )
-        )
+        empi = EMPIService()
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
             empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
@@ -176,15 +165,12 @@ class ImportPersonRecordsTestCase(TestCase):
             str(cm.exception),
         )
 
-        # Missing phone column only in first row
-        empi = EMPIService(
-            cast(
-                S3Client,
-                MockFSS3Client(
-                    "../../resources/raw-person-records-missing-phone-val.csv"
-                ),
-            )
+        mock_open_source.side_effect = lambda _: mock_open(
+            "../../resources/raw-person-records-missing-phone-val.csv"
         )
+
+        # Missing phone column only in first row
+        empi = EMPIService()
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
             empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
@@ -192,13 +178,12 @@ class ImportPersonRecordsTestCase(TestCase):
             str(cm.exception),
         )
 
-        # Extra column in header and first row
-        empi = EMPIService(
-            cast(
-                S3Client,
-                MockFSS3Client("../../resources/raw-person-records-extra-col.csv"),
-            )
+        mock_open_source.side_effect = lambda _: mock_open(
+            "../../resources/raw-person-records-extra-col.csv"
         )
+
+        # Extra column in header and first row
+        empi = EMPIService()
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
             empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
@@ -317,7 +302,7 @@ class PotentialMatchesTestCase(TransactionTestCase):
             }
         )
         self.job = Job.objects.create(
-            s3_uri="s3://example/test",
+            source_uri="s3://example/test",
             config_id=self.config.id,
             status="new",
         )
@@ -1420,7 +1405,7 @@ class MatchPersonRecordsTestCase(TransactionTestCase):
             }
         )
         self.job = Job.objects.create(
-            s3_uri="s3://example/test",
+            source_uri="s3://example/test",
             config_id=self.config.id,
             status="new",
         )
@@ -3681,7 +3666,7 @@ class PersonsTestCase(TransactionTestCase):
             }
         )
         self.job = Job.objects.create(
-            s3_uri="s3://example/test",
+            source_uri="s3://example/test",
             config_id=self.config.id,
             status="new",
         )
@@ -4219,7 +4204,7 @@ class ExportPersonRecordsTestCase(TestCase):
         self.job = Job.objects.create(
             config=self.config,
             status=JobStatus.succeeded,
-            s3_uri="s3://test/test",
+            source_uri="s3://test/test",
         )
 
         self.common_person_record = {
@@ -4287,18 +4272,13 @@ class ExportPersonRecordsTestCase(TestCase):
             phone="555-555-5556",
         )
 
-    @patch("main.util.s3.S3Client.put_object")
-    def test_export(self, mock_put_object: Any) -> None:
+    def test_export(self) -> None:
         """Tests successful export of person records."""
-        self.empi.export_person_records("s3://test/test")
-
-        # Verify S3 upload was called with CSV content
-        mock_put_object.assert_called_once()
-        call_args = mock_put_object.call_args[0]
-        self.assertEqual(call_args[0], "s3://test/test")
+        buffer = io.BytesIO()
+        self.empi.export_person_records(buffer)
 
         # Convert bytes to string and split into lines
-        csv_content = call_args[1].decode("utf-8").strip().split("\n")
+        csv_content = buffer.getvalue().decode("utf-8").strip().split("\n")
 
         # Verify CSV headers
         expected_headers = [
@@ -4364,21 +4344,16 @@ class ExportPersonRecordsTestCase(TestCase):
         self.assertEqual(data_rows[1][14], "County")  # county
         self.assertEqual(data_rows[1][15], "555-555-5556")  # phone
 
-    @patch("main.util.s3.S3Client.put_object")
-    def test_export_empty(self, mock_put_object: Any) -> None:
+    def test_export_empty(self) -> None:
         """Tests export with no records."""
         # Delete all person records
         PersonRecord.objects.all().delete()
 
-        self.empi.export_person_records("s3://test/test")
-
-        # Verify S3 upload was called with CSV headers only
-        mock_put_object.assert_called_once()
-        call_args = mock_put_object.call_args[0]
-        self.assertEqual(call_args[0], "s3://test/test")
+        buffer = io.BytesIO()
+        self.empi.export_person_records(buffer)
 
         # Convert bytes to string and split into lines
-        csv_content = call_args[1].decode("utf-8").strip().split("\n")
+        csv_content = buffer.getvalue().decode("utf-8").strip().split("\n")
 
         # Verify only headers are present
         self.assertEqual(len(csv_content), 1)
@@ -4401,13 +4376,3 @@ class ExportPersonRecordsTestCase(TestCase):
             "phone",
         ]
         self.assertEqual(csv_content[0].split(","), expected_headers)
-
-    @patch("main.util.s3.S3Client.put_object")
-    def test_export_s3_upload_error(self, mock_put_object: Any) -> None:
-        """Tests handling of S3 upload errors."""
-        mock_put_object.side_effect = UploadError("Upload failed")
-
-        with self.assertRaises(UploadError) as cm:
-            self.empi.export_person_records("s3://test/test")
-
-        self.assertEqual(str(cm.exception), "Upload failed")
