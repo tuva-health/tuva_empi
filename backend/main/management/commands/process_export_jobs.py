@@ -1,21 +1,20 @@
 import logging
+import os
 import signal
 import sys
 import threading
 import time
-import psutil
-import os
 from types import FrameType
 from typing import Any, Optional
 
+import psutil
 from django.core.management.base import BaseCommand
-from django.db import transaction, connection
+from django.db import connection, transaction
 from django.db.utils import OperationalError
 
-from main.models import Job, JobStatus, JobType
+from main.models import DbLockId, Job, JobStatus, JobType
 from main.services.empi.empi_service import EMPIService
 from main.util.sql import obtain_advisory_lock
-from main.models import DbLockId
 
 
 class Command(BaseCommand):
@@ -48,8 +47,7 @@ class Command(BaseCommand):
 
     def get_available_jobs_count(self) -> int:
         return Job.objects.filter(
-            status=JobStatus.new,
-            job_type=JobType.export_potential_matches
+            status=JobStatus.new, job_type=JobType.export_potential_matches
         ).count()
 
     def log_system_info(self) -> None:
@@ -67,7 +65,9 @@ class Command(BaseCommand):
         except Exception as e:
             self.logger.debug(f"Could not log system info: {e}")
 
-    def process_next_job(self, empi_service: EMPIService, max_jobs_per_run: int) -> None:
+    def process_next_job(
+        self, empi_service: EMPIService, max_jobs_per_run: int
+    ) -> None:
         with transaction.atomic(durable=True):
             # Obtain (wait for) lock to prevent multiple export processors from running jobs at the same time.
             # Jobs should be processed sequentially.
@@ -76,10 +76,14 @@ class Command(BaseCommand):
                 assert lock_acquired
 
             # Get pending export jobs with limit
-            pending_jobs = Job.objects.select_for_update().filter(
-                job_type=JobType.export_potential_matches,
-                status=JobStatus.new,
-            ).order_by("created")[:max_jobs_per_run]
+            pending_jobs = (
+                Job.objects.select_for_update()
+                .filter(
+                    job_type=JobType.export_potential_matches,
+                    status=JobStatus.new,
+                )
+                .order_by("created")[:max_jobs_per_run]
+            )
 
             if not pending_jobs:
                 return
@@ -90,7 +94,9 @@ class Command(BaseCommand):
             # Process jobs in batch
             for job in pending_jobs:
                 try:
-                    self.logger.info(f"Processing export job {job.id} (created: {job.created})")
+                    self.logger.info(
+                        f"Processing export job {job.id} (created: {job.created})"
+                    )
                     self.log_system_info()
 
                     start_time = time.perf_counter()
@@ -163,7 +169,9 @@ class Command(BaseCommand):
                             break
                         else:
                             # Only log sleep message at DEBUG level to reduce noise
-                            self.logger.debug(f"No pending jobs found, sleeping for {sleep_time} seconds")
+                            self.logger.debug(
+                                f"No pending jobs found, sleeping for {sleep_time} seconds"
+                            )
                             time.sleep(sleep_time)
                             continue
 
@@ -176,7 +184,9 @@ class Command(BaseCommand):
                     self.logger.warning(f"Database connection error: {str(e)}")
                     time.sleep(sleep_time)
                 except Exception as e:
-                    self.logger.exception(f"Unexpected error in export job processor: {str(e)}")
+                    self.logger.exception(
+                        f"Unexpected error in export job processor: {str(e)}"
+                    )
 
                     if once:
                         break

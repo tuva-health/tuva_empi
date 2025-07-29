@@ -1,15 +1,17 @@
+from django.http import FileResponse
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
-from django.http import FileResponse
 
 from main.models import MatchGroup
 from main.services.empi.empi_service import (
     EMPIService,
 )
 from main.util.dict import select_keys
+from main.util.io import open_temp_file
 from main.util.object_id import (
     get_id,
     get_object_id,
@@ -17,12 +19,9 @@ from main.util.object_id import (
     is_object_id,
     remove_prefix,
 )
-from main.util.io import open_temp_file
-from main.views.errors import error_data, validation_error_data
+from main.views.errors import error_data
 from main.views.persons import PersonDetailSerializer
 from main.views.serializer import Serializer
-from main.views.person_records import S3URIValidatorMixin
-from django.utils import timezone
 
 
 class GetPotentialMatchesRequest(Serializer):
@@ -188,6 +187,7 @@ def get_potential_match(request: Request, id: int) -> Response:
 
 class ExportPotentialMatchesRequest(serializers.Serializer):
     """Request serializer for exporting potential matches."""
+
     s3_uri = serializers.CharField(required=False, allow_blank=True)
     estimate = serializers.BooleanField(required=False, default=False)
 
@@ -204,11 +204,8 @@ class ExportPotentialMatchesRequest(serializers.Serializer):
         202: {
             "type": "object",
             "description": "Job created for S3 export",
-            "properties": {
-                "job_id": {"type": "string"},
-                "message": {"type": "string"}
-            },
-        }
+            "properties": {"job_id": {"type": "string"}, "message": {"type": "string"}},
+        },
     },
 )
 @api_view(["POST"])
@@ -279,11 +276,15 @@ def export_potential_matches(request):
             )
 
     except Exception as e:
+        # Log the full error for debugging but don't expose it to the client
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Export failed: {str(e)}", exc_info=True)
+
         return Response(
             {
                 "error": {
-                    "message": "Export failed",
-                    "details": [{"message": str(e)}],
+                    "message": "Export failed. Please try again or contact support if the issue persists.",
                 }
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

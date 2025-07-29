@@ -22,6 +22,7 @@ from main.models import (
     DbLockId,
     Job,
     JobStatus,
+    JobType,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -34,7 +35,6 @@ from main.models import (
     PersonRecordStaging,
     SplinkResult,
     User,
-    JobType,
 )
 from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
 from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
@@ -237,18 +237,22 @@ class EMPIService:
             )
 
             # Update job reason with progress info
-            job.reason = json.dumps({
-                **job_metadata,
-                "estimated_count": estimated_count,
-                "progress": 0,
-                "status": "processing",
-                "started_at": timezone.now().isoformat()
-            })
+            job.reason = json.dumps(
+                {
+                    **job_metadata,
+                    "estimated_count": estimated_count,
+                    "progress": 0,
+                    "status": "processing",
+                    "started_at": timezone.now().isoformat(),
+                }
+            )
             job.save()
 
             # Perform the export
             export_start = time.perf_counter()
-            self.logger.info(f"Export job {job.id}: starting export to {job.source_uri}")
+            self.logger.info(
+                f"Export job {job.id}: starting export to {job.source_uri}"
+            )
             self.export_potential_matches(
                 sink=job.source_uri,
                 estimated_count=estimated_count,  # Pass the already calculated count
@@ -257,13 +261,15 @@ class EMPIService:
 
             # Mark job as succeeded
             job.status = JobStatus.succeeded
-            job.reason = json.dumps({
-                **job_metadata,
-                "estimated_count": estimated_count,
-                "progress": 100,
-                "status": "completed",
-                "completed_at": timezone.now().isoformat()
-            })
+            job.reason = json.dumps(
+                {
+                    **job_metadata,
+                    "estimated_count": estimated_count,
+                    "progress": 100,
+                    "status": "completed",
+                    "completed_at": timezone.now().isoformat(),
+                }
+            )
             job.save()
 
             end_time = time.perf_counter()
@@ -284,12 +290,14 @@ class EMPIService:
             )
 
             job.status = JobStatus.failed
-            job.reason = json.dumps({
-                **(job_metadata if job_metadata else {}),
-                "error": str(e),
-                "failed_at": timezone.now().isoformat(),
-                "elapsed_seconds": elapsed_time
-            })
+            job.reason = json.dumps(
+                {
+                    **(job_metadata if job_metadata else {}),
+                    "error": str(e),
+                    "failed_at": timezone.now().isoformat(),
+                    "elapsed_seconds": elapsed_time,
+                }
+            )
             job.save()
             raise
 
@@ -1467,6 +1475,7 @@ class EMPIService:
             self.logger.info(
                 f"Wrote {cursor.rowcount} person records to {get_uri(sink) if isinstance(sink, str) else 'buffer'}"
             )
+
     def export_potential_matches(
         self,
         sink: str | IO[bytes],
@@ -1499,7 +1508,9 @@ class EMPIService:
             self.logger.info(f"Export estimated count: {estimated_count:,} records")
         else:
             # Use provided count (from job processing)
-            self.logger.info(f"Using provided estimated count: {estimated_count:,} records")
+            self.logger.info(
+                f"Using provided estimated count: {estimated_count:,} records"
+            )
 
         # Use server-side cursor for memory-efficient processing of large datasets
         # Wrap in transaction to support DECLARE CURSOR
@@ -1507,7 +1518,9 @@ class EMPIService:
             with connection.cursor() as cursor:
                 # Log database connection info
                 pid = cursor.connection.info.backend_pid
-                self.logger.info(f"[pg_pid={pid}] Starting export with server-side cursor")
+                self.logger.info(
+                    f"[pg_pid={pid}] Starting export with server-side cursor"
+                )
 
                 # Set cursor name for server-side cursor
                 cursor_name = f"export_cursor_{uuid.uuid4().hex[:8]}"
@@ -1550,11 +1563,15 @@ class EMPIService:
                 cursor.execute(export_sql)
                 cursor_declare_time = time.perf_counter() - cursor_declare_start
 
-                self.logger.info(f"[pg_pid={pid}] Cursor declared in {cursor_declare_time:.3f}s")
+                self.logger.info(
+                    f"[pg_pid={pid}] Cursor declared in {cursor_declare_time:.3f}s"
+                )
 
                 # Log query performance details for large exports
                 if estimated_count > 100000:
-                    self.logger.info(f"[pg_pid={pid}] Large export detected ({estimated_count:,} records) - monitoring performance")
+                    self.logger.info(
+                        f"[pg_pid={pid}] Large export detected ({estimated_count:,} records) - monitoring performance"
+                    )
 
                     # Note: Query plan generation removed to avoid SQL complexity issues
                     # Performance monitoring is handled through timing and progress logging
@@ -1575,20 +1592,26 @@ class EMPIService:
                         "person2_first_name",
                         "person2_last_name",
                         "person2_data_source",
-                        "match_probability"
+                        "match_probability",
                     ]
                     writer.writerow(headers)
 
                     # Dynamic chunk sizing based on dataset size
                     if estimated_count > 1000000:
                         chunk_size = 10000  # Larger chunks for very large datasets
-                        self.logger.info(f"[pg_pid={pid}] Using large chunk size ({chunk_size}) for {estimated_count:,} estimated records")
+                        self.logger.info(
+                            f"[pg_pid={pid}] Using large chunk size ({chunk_size}) for {estimated_count:,} estimated records"
+                        )
                     elif estimated_count > 100000:
                         chunk_size = 5000  # Medium chunks for large datasets
-                        self.logger.info(f"[pg_pid={pid}] Using medium chunk size ({chunk_size}) for {estimated_count:,} estimated records")
+                        self.logger.info(
+                            f"[pg_pid={pid}] Using medium chunk size ({chunk_size}) for {estimated_count:,} estimated records"
+                        )
                     else:
                         chunk_size = 2000  # Default chunk size for smaller datasets
-                        self.logger.info(f"[pg_pid={pid}] Using default chunk size ({chunk_size}) for {estimated_count:,} estimated records")
+                        self.logger.info(
+                            f"[pg_pid={pid}] Using default chunk size ({chunk_size}) for {estimated_count:,} estimated records"
+                        )
                     total_rows = 0
                     start_time = time.perf_counter()
                     chunk_count = 0
@@ -1598,9 +1621,11 @@ class EMPIService:
                     while True:
                         # Fetch chunk from cursor
                         fetch_start = time.perf_counter()
-                        fetch_sql = sql.SQL("fetch {chunk_size} from {cursor_name}").format(
+                        fetch_sql = sql.SQL(
+                            "fetch {chunk_size} from {cursor_name}"
+                        ).format(
                             chunk_size=sql.Literal(chunk_size),
-                            cursor_name=sql.Identifier(cursor_name)
+                            cursor_name=sql.Identifier(cursor_name),
                         )
                         cursor.execute(fetch_sql)
                         fetch_time = time.perf_counter() - fetch_start
@@ -1619,7 +1644,9 @@ class EMPIService:
 
                         # Log performance metrics for debugging
                         if chunk_count % 10 == 0:  # Log every 10 chunks
-                            self.logger.debug(f"[pg_pid={pid}] Chunk {chunk_count}: fetch={fetch_time:.3f}s, write={write_time:.3f}s, rows={len(rows)}")
+                            self.logger.debug(
+                                f"[pg_pid={pid}] Chunk {chunk_count}: fetch={fetch_time:.3f}s, write={write_time:.3f}s, rows={len(rows)}"
+                            )
 
                         # Update progress bar every 2 seconds instead of every 10k rows
                         current_time = time.perf_counter()
@@ -1629,11 +1656,15 @@ class EMPIService:
 
                             # Handle cases where estimated_count is None or 0
                             if estimated_count and estimated_count > 0:
-                                progress_percent = (total_rows / estimated_count * 100)
+                                progress_percent = total_rows / estimated_count * 100
                                 # Create progress bar
                                 bar_length = 30
-                                filled_length = int(bar_length * total_rows // estimated_count)
-                                bar = '█' * filled_length + '░' * (bar_length - filled_length)
+                                filled_length = int(
+                                    bar_length * total_rows // estimated_count
+                                )
+                                bar = "█" * filled_length + "░" * (
+                                    bar_length - filled_length
+                                )
 
                                 # Single line progress update with carriage return
                                 progress_msg = (
@@ -1668,28 +1699,38 @@ class EMPIService:
                     # Show final 100% progress before moving to next line
                     if estimated_count and estimated_count > 0:
                         final_elapsed = time.perf_counter() - start_time
-                        final_rate = total_rows / final_elapsed if final_elapsed > 0 else 0
-                        bar = '█' * 30  # Full progress bar
+                        final_rate = (
+                            total_rows / final_elapsed if final_elapsed > 0 else 0
+                        )
+                        bar = "█" * 30  # Full progress bar
                         final_progress_msg = (
                             f"[pg_pid={pid}] Export progress: {total_rows:,}/{estimated_count:,} "
                             f"(100.0%) [{bar}] "
                             f"{final_rate:.0f} rows/sec | {final_elapsed:.1f}s elapsed"
                         )
-                        self.logger.info(f"PROGRESS_UPDATE: {final_progress_msg.strip()}")
+                        self.logger.info(
+                            f"PROGRESS_UPDATE: {final_progress_msg.strip()}"
+                        )
                     else:
                         # Handle case where no estimated count was available
                         final_elapsed = time.perf_counter() - start_time
-                        final_rate = total_rows / final_elapsed if final_elapsed > 0 else 0
+                        final_rate = (
+                            total_rows / final_elapsed if final_elapsed > 0 else 0
+                        )
                         final_progress_msg = (
                             f"[pg_pid={pid}] Export completed: {total_rows:,} rows processed "
                             f"| {final_rate:.0f} rows/sec | {final_elapsed:.1f}s elapsed"
                         )
-                        self.logger.info(f"PROGRESS_UPDATE: {final_progress_msg.strip()}")
+                        self.logger.info(
+                            f"PROGRESS_UPDATE: {final_progress_msg.strip()}"
+                        )
 
                     # Log completion
                     self.logger.info(f"[pg_pid={pid}] Export progress completed")
 
-                    self.logger.info(f"[pg_pid={pid}] Cursor closed in {close_time:.3f}s")
+                    self.logger.info(
+                        f"[pg_pid={pid}] Cursor closed in {close_time:.3f}s"
+                    )
 
                 end_time = time.perf_counter()
                 total_elapsed = end_time - start_time
@@ -1748,16 +1789,23 @@ class EMPIService:
             result = cursor.fetchone()
             estimated_count = result[0] if result else 0
 
-            self.logger.info(f"[pg_pid={pid}] Count estimation completed in {count_time:.3f}s: {estimated_count:,} records")
+            self.logger.info(
+                f"[pg_pid={pid}] Count estimation completed in {count_time:.3f}s: {estimated_count:,} records"
+            )
 
             # Log performance comparison
             if count_time > 1.0:
-                self.logger.info(f"[pg_pid={pid}] ⚠️  Count estimation took {count_time:.3f}s - consider adding indexes for better performance")
+                self.logger.info(
+                    f"[pg_pid={pid}] ⚠️  Count estimation took {count_time:.3f}s - consider adding indexes for better performance"
+                )
             else:
-                self.logger.info(f"[pg_pid={pid}] ✅ Count estimation completed in {count_time:.3f}s")
+                self.logger.info(
+                    f"[pg_pid={pid}] ✅ Count estimation completed in {count_time:.3f}s"
+                )
 
             # Log accuracy note
-            self.logger.info(f"[pg_pid={pid}] 📊 Estimated {estimated_count:,} potential match pairs (SplinkResult rows) to be exported")
+            self.logger.info(
+                f"[pg_pid={pid}] 📊 Estimated {estimated_count:,} potential match pairs (SplinkResult rows) to be exported"
+            )
 
             return estimated_count
-

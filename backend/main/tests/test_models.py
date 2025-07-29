@@ -4,7 +4,7 @@ from django.forms import model_to_dict
 from django.test import TestCase
 from django.utils import timezone
 
-from main.models import Config, Job, JobStatus, PersonRecordStaging
+from main.models import Config, Job, PersonRecordStaging
 
 
 class SchemaTestCase(TestCase):

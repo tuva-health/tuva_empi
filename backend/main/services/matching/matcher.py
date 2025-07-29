@@ -1873,7 +1873,9 @@ class Matcher:
 
                     job = (
                         Job.objects.select_for_update()
-                        .filter(status=JobStatus.new, job_type=JobType.import_person_records)
+                        .filter(
+                            status=JobStatus.new, job_type=JobType.import_person_records
+                        )
                         .order_by("id")
                         .first()
                     )

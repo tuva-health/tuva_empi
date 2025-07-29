@@ -372,7 +372,7 @@ class PotentialMatchesTestCase(TestCase):
     def test_export_potential_matches_ok_s3_uri(self, mock_empi: Any) -> None:
         """Tests export_potential_matches succeeds with S3 URI."""
         mock_empi_obj = mock_empi.return_value
-        mock_job = type('Job', (), {'id': 123, 'status': 'new'})()
+        mock_job = type("Job", (), {"id": 123, "status": "new"})()
         mock_empi_obj.create_export_job.return_value = mock_job
 
         url = reverse("export_potential_matches")
@@ -385,16 +385,17 @@ class PotentialMatchesTestCase(TestCase):
         # since it's a default value in the view
         mock_empi_obj.create_export_job.assert_called_once()
         call_args = mock_empi_obj.create_export_job.call_args
-        self.assertEqual(call_args[1]['sink_uri'], "s3://bucket/path/file.csv")
+        self.assertEqual(call_args[1]["sink_uri"], "s3://bucket/path/file.csv")
 
         self.assertEqual(response.status_code, 202)
-        self.assertDictEqual(response.json(), {
-            "job_id": 123,
-            "status": "new",
-            "message": "Export job 123 created for S3 export to s3://bucket/path/file.csv"
-        })
-
-
+        self.assertDictEqual(
+            response.json(),
+            {
+                "job_id": 123,
+                "status": "new",
+                "message": "Export job 123 created for S3 export to s3://bucket/path/file.csv",
+            },
+        )
 
     @patch("main.views.potential_matches.EMPIService")
     def test_export_potential_matches_ok_estimate(self, mock_empi: Any) -> None:
@@ -408,10 +409,13 @@ class PotentialMatchesTestCase(TestCase):
 
         mock_empi_obj.estimate_export_count.assert_called_once()
         self.assertEqual(response.status_code, 200)
-        self.assertDictEqual(response.json(), {
-            "estimated_count": 147389,
-            "message": "Estimated 147,389 potential match pairs to export"
-        })
+        self.assertDictEqual(
+            response.json(),
+            {
+                "estimated_count": 147389,
+                "message": "Estimated 147,389 potential match pairs to export",
+            },
+        )
 
     @patch("main.views.potential_matches.EMPIService")
     def test_export_potential_matches_s3_error(self, mock_empi: Any) -> None:
