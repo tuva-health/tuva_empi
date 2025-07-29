@@ -13,6 +13,7 @@ from main.models import (
     DbLockId,
     Job,
     JobStatus,
+    JobType,
 )
 from main.services.matching.job_runner import JobRunner
 from main.services.matching.k8s_job_runner import K8sJobRunner
@@ -59,7 +60,7 @@ class MatchingService:
             sys.exit(1)
 
     def get_available_jobs_count(self) -> int:
-        return Job.objects.filter(status=JobStatus.new).count()
+        return Job.objects.filter(status=JobStatus.new, job_type=JobType.import_person_records).count()
 
     def run_next_job(self) -> None:
         with transaction.atomic(durable=True):

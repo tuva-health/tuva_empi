@@ -38,6 +38,7 @@ services:
       - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
     networks:
       - app-network
+    restart: on-failure
 
   backend-bootstrap:
     build:
@@ -111,6 +112,27 @@ services:
       - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
     networks:
       - app-network
+
+  backend-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["process_export_jobs", "--sleep", "60", "--max-jobs-per-run", "3"]
+    depends_on:
+      backend-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      PYTHONUNBUFFERED: 1
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    volumes:
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+    networks:
+      - app-network
+    restart: unless-stopped
 
   frontend:
     build:

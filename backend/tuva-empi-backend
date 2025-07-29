@@ -10,6 +10,30 @@ config_path="${TUVA_EMPI_CONFIG_FILE:-/usr/local/etc/tuva-empi/deployment.json}"
 # Retrieve configuration if not available locally
 DEST_CONFIG_FILE="$config_path" python configure.py
 
+# Function to run migrations with retry
+migrate_with_retry() {
+    local max_attempts=5
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Migration attempt $attempt of $max_attempts"
+
+        if TUVA_EMPI_CONFIG_FILE="$config_path" python manage.py migrate; then
+            echo "Migrations completed successfully"
+            return 0
+        else
+            echo "Migration attempt $attempt failed"
+            if [ $attempt -eq $max_attempts ]; then
+                echo "All migration attempts failed"
+                return 1
+            fi
+            echo "Waiting 10 seconds before retry..."
+            sleep 10
+            attempt=$((attempt + 1))
+        fi
+    done
+}
+
 if [[ "$mode" == "api" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec gunicorn tuva_empi.wsgi:application --bind 0.0.0.0:8000
 elif [[ "$mode" == "matching-service" ]]; then
@@ -18,9 +42,12 @@ elif [[ "$mode" == "matching-job" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py run_matching_job
 elif [[ "$mode" == "bootstrap" ]]; then
   TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py bootstrap
-elif [[ "$mode" == "migrate" ]]; then
-  TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py migrate
+elif [[ "$mode" == "process_export_jobs" ]]; then
+  shift  # remove first arg (mode)
+  TUVA_EMPI_CONFIG_FILE="$config_path" exec python manage.py process_export_jobs "$@"
+elif [[ "$mode" == "migrate" || "$mode" == "migrate_with_retry" ]]; then
+  migrate_with_retry
 else
-  echo "Usage: $0 [api|matching-service|matching-job|bootstrap|migrate]"
+echo "Usage: $0 [api|matching-service|matching-job|bootstrap|migrate|migrate_with_retry|process_export_jobs]"
   exit 1
 fi

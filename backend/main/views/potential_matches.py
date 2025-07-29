@@ -3,6 +3,7 @@ from rest_framework import serializers, status
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
+from django.http import FileResponse
 
 from main.models import MatchGroup
 from main.services.empi.empi_service import (
@@ -16,9 +17,12 @@ from main.util.object_id import (
     is_object_id,
     remove_prefix,
 )
-from main.views.errors import error_data
+from main.util.io import open_temp_file
+from main.views.errors import error_data, validation_error_data
 from main.views.persons import PersonDetailSerializer
 from main.views.serializer import Serializer
+from main.views.person_records import S3URIValidatorMixin
+from django.utils import timezone
 
 
 class GetPotentialMatchesRequest(Serializer):
@@ -180,3 +184,107 @@ def get_potential_match(request: Request, id: int) -> Response:
         )
 
     return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ExportPotentialMatchesRequest(serializers.Serializer):
+    """Request serializer for exporting potential matches."""
+    s3_uri = serializers.CharField(required=False, allow_blank=True)
+    estimate = serializers.BooleanField(required=False, default=False)
+
+
+@extend_schema(
+    summary="Export potential matches",
+    request=ExportPotentialMatchesRequest,
+    responses={
+        200: {
+            "type": "object",
+            "description": "CSV file download for direct export or estimate count",
+            "properties": {},
+        },
+        202: {
+            "type": "object",
+            "description": "Job created for S3 export",
+            "properties": {
+                "job_id": {"type": "string"},
+                "message": {"type": "string"}
+            },
+        }
+    },
+)
+@api_view(["POST"])
+def export_potential_matches(request):
+    """Export potential matches to CSV format.
+
+    This endpoint supports three modes:
+    1. Estimate only (estimate=true) - returns estimated record count
+    2. S3 export (s3_uri provided) - creates background job for S3 export
+    3. Direct file download (no s3_uri) - returns CSV file directly
+
+    Priority order:
+    1. estimate=true (returns estimated count)
+    2. s3_uri provided (creates background job)
+    3. Default (direct file download)
+    """
+    serializer = ExportPotentialMatchesRequest(data=request.data)
+    if not serializer.is_valid():
+        return Response(
+            {"error": {"message": "Validation failed", "details": serializer.errors}},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    s3_uri = serializer.validated_data.get("s3_uri", "").strip()
+    estimate_only = serializer.validated_data.get("estimate", False)
+
+    empi_service = EMPIService()
+
+    try:
+        # Mode 1: Estimate only
+        if estimate_only:
+            estimated_count = empi_service.estimate_export_count()
+            return Response(
+                {
+                    "estimated_count": estimated_count,
+                    "message": f"Estimated {estimated_count:,} potential match pairs to export",
+                }
+            )
+
+        # Mode 2: S3 export (background job)
+        elif s3_uri:
+            # Create background job for S3 export
+            job = empi_service.create_export_job(
+                config_id=1,  # Default config ID
+                sink_uri=s3_uri,
+            )
+            return Response(
+                {
+                    "job_id": job.id,
+                    "status": job.status,
+                    "message": f"Export job {job.id} created for S3 export to {s3_uri}",
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        # Mode 3: Direct file download
+        else:
+            # Use the existing utility for temporary file handling
+            f = open_temp_file()
+            empi_service.export_potential_matches(sink=f)
+            f.seek(0)
+
+            return FileResponse(
+                f,
+                content_type="text/csv",
+                as_attachment=True,
+                filename=f"potential_matches_export_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            )
+
+    except Exception as e:
+        return Response(
+            {
+                "error": {
+                    "message": "Export failed",
+                    "details": [{"message": str(e)}],
+                }
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
