@@ -1,3 +1,5 @@
+from typing import Any, Union
+
 from django.http import FileResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -185,11 +187,17 @@ def get_potential_match(request: Request, id: int) -> Response:
     return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class ExportPotentialMatchesRequest(serializers.Serializer):
+class ExportPotentialMatchesRequest(serializers.Serializer[dict[str, Any]]):
     """Request serializer for exporting potential matches."""
 
     s3_uri = serializers.CharField(required=False, allow_blank=True)
     estimate = serializers.BooleanField(required=False, default=False)
+
+    def validate_s3_uri(self, value: str) -> str:
+        """Validate S3 URI format."""
+        if value and not value.startswith("s3://"):
+            raise serializers.ValidationError("S3 URI must start with 's3://'")
+        return value
 
 
 @extend_schema(
@@ -209,7 +217,7 @@ class ExportPotentialMatchesRequest(serializers.Serializer):
     },
 )
 @api_view(["POST"])
-def export_potential_matches(request):
+def export_potential_matches(request: Request) -> Union[Response, FileResponse]:
     """Export potential matches to CSV format.
 
     This endpoint supports three modes:

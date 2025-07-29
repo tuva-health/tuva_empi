@@ -253,6 +253,9 @@ class EMPIService:
             self.logger.info(
                 f"Export job {job.id}: starting export to {job.source_uri}"
             )
+            if job.source_uri is None:
+                raise ValueError("Job source_uri cannot be None for export jobs")
+
             self.export_potential_matches(
                 sink=job.source_uri,
                 estimated_count=estimated_count,  # Pass the already calculated count

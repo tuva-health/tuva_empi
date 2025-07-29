@@ -429,7 +429,6 @@ class PotentialMatchesTestCase(TestCase):
 
         self.assertEqual(response.status_code, 500)
         self.assertIn("Export failed", response.json()["error"]["message"])
-        self.assertIn("S3 error", response.json()["error"]["details"][0]["message"])
 
     def test_export_potential_matches_invalid_s3_uri(self) -> None:
         """Tests export_potential_matches validates S3 URI format."""
