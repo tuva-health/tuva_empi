@@ -7,7 +7,11 @@ from main.views.health_check import health_check
 from main.views.matches import create_match
 from main.views.person_records import export_person_records, import_person_records
 from main.views.persons import get_person, get_persons
-from main.views.potential_matches import get_potential_match, get_potential_matches
+from main.views.potential_matches import (
+    export_potential_matches,
+    get_potential_match,
+    get_potential_matches,
+)
 from main.views.users import get_users, update_user
 
 urlpatterns = [
@@ -19,6 +23,11 @@ urlpatterns = [
     path("person-records/export", export_person_records, name="export_person_records"),
     path("data-sources", get_data_sources, name="get_data_sources"),
     path("potential-matches", get_potential_matches, name="get_potential_matches"),
+    path(
+        "potential-matches/export",
+        export_potential_matches,
+        name="export_potential_matches",
+    ),
     path("potential-matches/<str:id>", get_potential_match, name="get_potential_match"),
     path("matches", create_match, name="create_match"),
     path("persons", get_persons, name="get_persons"),

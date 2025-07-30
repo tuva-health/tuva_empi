@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import logging
+import time
 import uuid
 from collections import defaultdict
 from datetime import datetime
@@ -21,6 +22,7 @@ from main.models import (
     DbLockId,
     Job,
     JobStatus,
+    JobType,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -174,6 +176,133 @@ class EMPIService:
             config_id=config_id,
             status=JobStatus.new,
         )
+
+    def create_export_job(
+        self,
+        config_id: int,
+        sink_uri: str,
+    ) -> Job:
+        """Create a background job for exporting potential matches.
+
+        Args:
+            config_id: Configuration ID for the job
+            sink_uri: S3 URI where the export will be saved
+        Returns:
+            Job object representing the background export task
+        """
+        return Job.objects.create(
+            source_uri=sink_uri,
+            config_id=config_id,
+            job_type=JobType.export_potential_matches,
+            status=JobStatus.new,
+        )
+
+    def process_export_job(self, job: Job) -> None:
+        """Process an export job in the background.
+
+        This method should be called by a background worker to process
+        the export job asynchronously.
+
+        Args:
+            job: The Job object to process
+
+        Raises:
+            Exception: If the export fails
+        """
+        start_time = time.perf_counter()
+
+        try:
+            self.logger.info(f"Starting export job {job.id} (sink: {job.source_uri})")
+
+            # Parse job metadata
+            job_metadata = json.loads(job.reason) if job.reason else {}
+
+            # Log job parameters for debugging
+            if job_metadata:
+                self.logger.info(f"Export job {job.id} parameters: no filters applied")
+
+            # Update job status to processing
+            job.status = JobStatus.new
+            job.save()
+
+            # Estimate total records for progress tracking
+            estimation_start = time.perf_counter()
+            self.logger.info(f"Export job {job.id}: estimating record count...")
+            estimated_count = self.estimate_export_count()
+            estimation_time = time.perf_counter() - estimation_start
+
+            self.logger.info(
+                f"Export job {job.id}: estimated {estimated_count:,} records to export "
+                f"in {estimation_time:.3f}s"
+            )
+
+            # Update job reason with progress info
+            job.reason = json.dumps(
+                {
+                    **job_metadata,
+                    "estimated_count": estimated_count,
+                    "progress": 0,
+                    "status": "processing",
+                    "started_at": timezone.now().isoformat(),
+                }
+            )
+            job.save()
+
+            # Perform the export
+            export_start = time.perf_counter()
+            self.logger.info(
+                f"Export job {job.id}: starting export to {job.source_uri}"
+            )
+            if job.source_uri is None:
+                raise ValueError("Job source_uri cannot be None for export jobs")
+
+            self.export_potential_matches(
+                sink=job.source_uri,
+                estimated_count=estimated_count,  # Pass the already calculated count
+            )
+            export_time = time.perf_counter() - export_start
+
+            # Mark job as succeeded
+            job.status = JobStatus.succeeded
+            job.reason = json.dumps(
+                {
+                    **job_metadata,
+                    "estimated_count": estimated_count,
+                    "progress": 100,
+                    "status": "completed",
+                    "completed_at": timezone.now().isoformat(),
+                }
+            )
+            job.save()
+
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+
+            self.logger.info(
+                f"Export job {job.id} completed successfully in {elapsed_time:.5f} seconds "
+                f"({estimated_count:,} records exported to {job.source_uri}) "
+                f"[estimation: {estimation_time:.3f}s, export: {export_time:.3f}s]"
+            )
+
+        except Exception as e:
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+
+            self.logger.exception(
+                f"Export job {job.id} failed after {elapsed_time:.5f} seconds: {str(e)}"
+            )
+
+            job.status = JobStatus.failed
+            job.reason = json.dumps(
+                {
+                    **(job_metadata if job_metadata else {}),
+                    "error": str(e),
+                    "failed_at": timezone.now().isoformat(),
+                    "elapsed_seconds": elapsed_time,
+                }
+            )
+            job.save()
+            raise
 
     def import_person_records(self, source: str | UploadedFile, config_id: int) -> int:
         self.logger.info("Importing person records")
@@ -640,7 +769,7 @@ class EMPIService:
         if "uuid" in update:
             assert "version" in update, "Invalid Person update"
 
-            self.logger.info(f"Updating Person with UUID: {update["uuid"]}")
+            self.logger.info(f"Updating Person with UUID: {update['uuid']}")
 
             # Update Person
             # FIXME: Don't update person if their records haven't changed
@@ -663,13 +792,13 @@ class EMPIService:
             person = Person.objects.get(uuid=update["uuid"])
 
             self.logger.info(
-                f"Updated Person with UUID: {update["uuid"]} (ID: {person.id})"
+                f"Updated Person with UUID: {update['uuid']} (ID: {person.id})"
             )
         else:
             assert "version" not in update, "Invalid Person update"
 
             self.logger.info(
-                f"Creating new Person with record IDs: {update["new_person_record_ids"]}"
+                f"Creating new Person with record IDs: {update['new_person_record_ids']}"
             )
 
             # Create Person
@@ -681,7 +810,7 @@ class EMPIService:
             )
 
             self.logger.info(
-                f"Created new Person with ID: {person.id} (record IDs: {update["new_person_record_ids"]})"
+                f"Created new Person with ID: {person.id} (record IDs: {update['new_person_record_ids']})"
             )
 
         return person
@@ -1347,5 +1476,339 @@ class EMPIService:
                 text_stream.detach()
 
             self.logger.info(
-                f"Wrote {cursor.rowcount} person records to {get_uri(sink) if isinstance(sink, str) else "buffer"}"
+                f"Wrote {cursor.rowcount} person records to {get_uri(sink) if isinstance(sink, str) else 'buffer'}"
             )
+
+    def export_potential_matches(
+        self,
+        sink: str | IO[bytes],
+        estimated_count: Optional[int] = None,
+    ) -> None:
+        """Export potential matches to CSV format.
+
+        This method efficiently exports potential matches in a pairwise format,
+        where each row represents a potential match between two person records.
+        The export is designed to handle large datasets without memory issues.
+
+        Args:
+            sink: The data sink URI or file.
+            estimated_count: Pre-calculated count (optional, for job processing)
+
+        Raises:
+            UploadError: If the upload fails.
+        """
+        self.logger.info("Exporting potential matches to CSV")
+
+        match_group_table = MatchGroup._meta.db_table
+        splink_result_table = SplinkResult._meta.db_table
+        person_record_table = PersonRecord._meta.db_table
+        person_table = Person._meta.db_table
+
+        # Get estimated count early for performance monitoring and chunk sizing
+        if estimated_count is None:
+            # Only calculate if not provided (for direct API calls)
+            estimated_count = self.estimate_export_count()
+            self.logger.info(f"Export estimated count: {estimated_count:,} records")
+        else:
+            # Use provided count (from job processing)
+            self.logger.info(
+                f"Using provided estimated count: {estimated_count:,} records"
+            )
+
+        # Use server-side cursor for memory-efficient processing of large datasets
+        # Wrap in transaction to support DECLARE CURSOR
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                # Log database connection info
+                pid = cursor.connection.info.backend_pid
+                self.logger.info(
+                    f"[pg_pid={pid}] Starting export with server-side cursor"
+                )
+
+                # Set cursor name for server-side cursor
+                cursor_name = f"export_cursor_{uuid.uuid4().hex[:8]}"
+                self.logger.info(f"[pg_pid={pid}] Using cursor: {cursor_name}")
+
+                # Create the optimized query with server-side cursor
+                # Simplified query for better performance - direct joins without complex CTE
+                export_sql = sql.SQL("""
+                    declare {cursor_name} cursor for
+                    select
+                        'pm_' || mg.id as group_id,
+                        'Person_' || p1.id as person1_id,
+                        pr1.first_name as person1_first_name,
+                        pr1.last_name as person1_last_name,
+                        pr1.data_source as person1_data_source,
+                        'Person_' || p2.id as person2_id,
+                        pr2.first_name as person2_first_name,
+                        pr2.last_name as person2_last_name,
+                        pr2.data_source as person2_data_source,
+                        sr.match_probability
+                    from {match_group_table} mg
+                    inner join {splink_result_table} sr on mg.id = sr.match_group_id
+                    inner join {person_record_table} pr1 on sr.person_record_l_id = pr1.id
+                    inner join {person_table} p1 on pr1.person_id = p1.id
+                    inner join {person_record_table} pr2 on sr.person_record_r_id = pr2.id
+                    inner join {person_table} p2 on pr2.person_id = p2.id
+                    where mg.matched is null
+                        and mg.deleted is null
+                    order by mg.id, sr.match_probability desc
+                """).format(
+                    cursor_name=sql.Identifier(cursor_name),
+                    match_group_table=sql.Identifier(match_group_table),
+                    splink_result_table=sql.Identifier(splink_result_table),
+                    person_record_table=sql.Identifier(person_record_table),
+                    person_table=sql.Identifier(person_table),
+                )
+
+                # Execute the cursor declaration with performance monitoring for large exports
+                cursor_declare_start = time.perf_counter()
+                cursor.execute(export_sql)
+                cursor_declare_time = time.perf_counter() - cursor_declare_start
+
+                self.logger.info(
+                    f"[pg_pid={pid}] Cursor declared in {cursor_declare_time:.3f}s"
+                )
+
+                # Log query performance details for large exports
+                if estimated_count > 100000:
+                    self.logger.info(
+                        f"[pg_pid={pid}] Large export detected ({estimated_count:,} records) - monitoring performance"
+                    )
+
+                    # Note: Query plan generation removed to avoid SQL complexity issues
+                    # Performance monitoring is handled through timing and progress logging
+
+                # Write CSV content to sink with streaming
+                with open_sink(sink) as f:
+                    text_stream = io.TextIOWrapper(f, encoding="utf-8", newline="")
+                    writer = csv.writer(text_stream, lineterminator="\n")
+
+                    # Write headers
+                    headers = [
+                        "group_id",
+                        "person1_id",
+                        "person1_first_name",
+                        "person1_last_name",
+                        "person1_data_source",
+                        "person2_id",
+                        "person2_first_name",
+                        "person2_last_name",
+                        "person2_data_source",
+                        "match_probability",
+                    ]
+                    writer.writerow(headers)
+
+                    # Dynamic chunk sizing based on dataset size
+                    if estimated_count > 1000000:
+                        chunk_size = 10000  # Larger chunks for very large datasets
+                        self.logger.info(
+                            f"[pg_pid={pid}] Using large chunk size ({chunk_size}) for {estimated_count:,} estimated records"
+                        )
+                    elif estimated_count > 100000:
+                        chunk_size = 5000  # Medium chunks for large datasets
+                        self.logger.info(
+                            f"[pg_pid={pid}] Using medium chunk size ({chunk_size}) for {estimated_count:,} estimated records"
+                        )
+                    else:
+                        chunk_size = 2000  # Default chunk size for smaller datasets
+                        self.logger.info(
+                            f"[pg_pid={pid}] Using default chunk size ({chunk_size}) for {estimated_count:,} estimated records"
+                        )
+                    total_rows = 0
+                    start_time = time.perf_counter()
+                    chunk_count = 0
+                    last_progress_time = start_time
+                    progress_interval = 5.0  # Update progress every 5 seconds
+
+                    while True:
+                        # Fetch chunk from cursor
+                        fetch_start = time.perf_counter()
+                        fetch_sql = sql.SQL(
+                            "fetch {chunk_size} from {cursor_name}"
+                        ).format(
+                            chunk_size=sql.Literal(chunk_size),
+                            cursor_name=sql.Identifier(cursor_name),
+                        )
+                        cursor.execute(fetch_sql)
+                        fetch_time = time.perf_counter() - fetch_start
+
+                        rows = cursor.fetchall()
+                        if not rows:
+                            break
+
+                        # Write chunk to CSV
+                        write_start = time.perf_counter()
+                        writer.writerows(rows)  # Use writerows for better performance
+                        write_time = time.perf_counter() - write_start
+
+                        total_rows += len(rows)
+                        chunk_count += 1
+
+                        # Log performance metrics for debugging
+                        if chunk_count % 10 == 0:  # Log every 10 chunks
+                            self.logger.debug(
+                                f"[pg_pid={pid}] Chunk {chunk_count}: fetch={fetch_time:.3f}s, write={write_time:.3f}s, rows={len(rows)}"
+                            )
+
+                        # Update progress bar every 2 seconds instead of every 10k rows
+                        current_time = time.perf_counter()
+                        if current_time - last_progress_time >= progress_interval:
+                            elapsed = current_time - start_time
+                            rate = total_rows / elapsed if elapsed > 0 else 0
+
+                            # Handle cases where estimated_count is None or 0
+                            if estimated_count and estimated_count > 0:
+                                progress_percent = total_rows / estimated_count * 100
+                                # Create progress bar
+                                bar_length = 30
+                                filled_length = int(
+                                    bar_length * total_rows // estimated_count
+                                )
+                                bar = "█" * filled_length + "░" * (
+                                    bar_length - filled_length
+                                )
+
+                                # Single line progress update with carriage return
+                                progress_msg = (
+                                    f"[pg_pid={pid}] Export progress: {total_rows:,}/{estimated_count:,} "
+                                    f"({progress_percent:.1f}%) [{bar}] "
+                                    f"{rate:.0f} rows/sec | {elapsed:.1f}s elapsed"
+                                )
+                            else:
+                                # Fallback when no estimated count available
+                                progress_msg = (
+                                    f"[pg_pid={pid}] Export progress: {total_rows:,} rows processed "
+                                    f"| {rate:.0f} rows/sec | {elapsed:.1f}s elapsed"
+                                )
+
+                            # Use logger with a unique identifier for progress updates
+                            self.logger.info(f"PROGRESS_UPDATE: {progress_msg.strip()}")
+
+                            last_progress_time = current_time
+                            text_stream.flush()
+
+                    # Close the cursor
+                    close_start = time.perf_counter()
+                    close_sql = sql.SQL("close {cursor_name}").format(
+                        cursor_name=sql.Identifier(cursor_name)
+                    )
+                    cursor.execute(close_sql)
+                    close_time = time.perf_counter() - close_start
+
+                    text_stream.flush()
+                    text_stream.detach()
+
+                    # Show final 100% progress before moving to next line
+                    if estimated_count and estimated_count > 0:
+                        final_elapsed = time.perf_counter() - start_time
+                        final_rate = (
+                            total_rows / final_elapsed if final_elapsed > 0 else 0
+                        )
+                        bar = "█" * 30  # Full progress bar
+                        final_progress_msg = (
+                            f"[pg_pid={pid}] Export progress: {total_rows:,}/{estimated_count:,} "
+                            f"(100.0%) [{bar}] "
+                            f"{final_rate:.0f} rows/sec | {final_elapsed:.1f}s elapsed"
+                        )
+                        self.logger.info(
+                            f"PROGRESS_UPDATE: {final_progress_msg.strip()}"
+                        )
+                    else:
+                        # Handle case where no estimated count was available
+                        final_elapsed = time.perf_counter() - start_time
+                        final_rate = (
+                            total_rows / final_elapsed if final_elapsed > 0 else 0
+                        )
+                        final_progress_msg = (
+                            f"[pg_pid={pid}] Export completed: {total_rows:,} rows processed "
+                            f"| {final_rate:.0f} rows/sec | {final_elapsed:.1f}s elapsed"
+                        )
+                        self.logger.info(
+                            f"PROGRESS_UPDATE: {final_progress_msg.strip()}"
+                        )
+
+                    # Log completion
+                    self.logger.info(f"[pg_pid={pid}] Export progress completed")
+
+                    self.logger.info(
+                        f"[pg_pid={pid}] Cursor closed in {close_time:.3f}s"
+                    )
+
+                end_time = time.perf_counter()
+                total_elapsed = end_time - start_time
+                final_rate = total_rows / total_elapsed if total_elapsed > 0 else 0
+                avg_chunk_time = total_elapsed / chunk_count if chunk_count > 0 else 0
+
+                self.logger.info(
+                    f"Export completed: {total_rows:,} potential match pairs written to "
+                    f"{get_uri(sink) if isinstance(sink, str) else 'buffer'} "
+                    f"in {total_elapsed:.2f}s ({final_rate:.0f} rows/sec) "
+                    f"[chunks: {chunk_count}, avg chunk time: {avg_chunk_time:.3f}s]"
+                )
+
+    def estimate_export_count(self) -> int:
+        """Estimate the number of records that will be exported.
+
+        This method runs a count query to estimate the total number of records
+        that will be exported, useful for progress tracking.
+
+        Returns:
+            Estimated number of records to be exported
+        """
+        match_group_table = MatchGroup._meta.db_table
+        splink_result_table = SplinkResult._meta.db_table
+        person_record_table = PersonRecord._meta.db_table
+        person_table = Person._meta.db_table
+
+        with connection.cursor() as cursor:
+            # Log database connection info
+            pid = cursor.connection.info.backend_pid
+            self.logger.info(f"[pg_pid={pid}] Starting export count estimation")
+
+            # Count estimation that matches the actual export logic - count potential match pairs
+            # This counts the actual SplinkResult rows that will be exported
+            count_sql = sql.SQL("""
+                select count(*)
+                from {match_group_table} mg
+                inner join {splink_result_table} sr on mg.id = sr.match_group_id
+                inner join {person_record_table} pr1 on sr.person_record_l_id = pr1.id
+                inner join {person_table} p1 on pr1.person_id = p1.id
+                inner join {person_record_table} pr2 on sr.person_record_r_id = pr2.id
+                inner join {person_table} p2 on pr2.person_id = p2.id
+                where mg.matched is null
+                    and mg.deleted is null
+            """).format(
+                match_group_table=sql.Identifier(match_group_table),
+                splink_result_table=sql.Identifier(splink_result_table),
+                person_record_table=sql.Identifier(person_record_table),
+                person_table=sql.Identifier(person_table),
+            )
+
+            count_start = time.perf_counter()
+            cursor.execute(count_sql)
+            count_time = time.perf_counter() - count_start
+
+            result = cursor.fetchone()
+            estimated_count = result[0] if result else 0
+
+            self.logger.info(
+                f"[pg_pid={pid}] Count estimation completed in {count_time:.3f}s: {estimated_count:,} records"
+            )
+
+            # Log performance comparison
+            if count_time > 1.0:
+                self.logger.info(
+                    f"[pg_pid={pid}] ⚠️  Count estimation took {count_time:.3f}s - consider adding indexes for better performance"
+                )
+            else:
+                self.logger.info(
+                    f"[pg_pid={pid}] ✅ Count estimation completed in {count_time:.3f}s"
+                )
+
+            # Log accuracy note
+            self.logger.info(
+                f"[pg_pid={pid}] 📊 Estimated {estimated_count:,} potential match pairs (SplinkResult rows) to be exported"
+            )
+
+            return estimated_count

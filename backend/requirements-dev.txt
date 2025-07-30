@@ -6,3 +6,4 @@ mypy==1.12.0
 pandas-stubs==2.2.3.241126
 ruff==0.7.3
 types-jwcrypto==1.5.0.20250326
+types-psutil==5.9.5.20240316

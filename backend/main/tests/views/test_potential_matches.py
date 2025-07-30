@@ -363,3 +363,78 @@ class PotentialMatchesTestCase(TestCase):
         self.assertTrue(
             response.json()["error"]["message"].startswith("Unexpected internal error")
         )
+
+    #
+    # export_potential_matches
+    #
+
+    @patch("main.views.potential_matches.EMPIService")
+    def test_export_potential_matches_ok_s3_uri(self, mock_empi: Any) -> None:
+        """Tests export_potential_matches succeeds with S3 URI."""
+        mock_empi_obj = mock_empi.return_value
+        mock_job = type("Job", (), {"id": 123, "status": "new"})()
+        mock_empi_obj.create_export_job.return_value = mock_job
+
+        url = reverse("export_potential_matches")
+        data = {
+            "s3_uri": "s3://bucket/path/file.csv",
+        }
+        response = self.client.post(url, data, content_type="application/json")
+
+        # The create_export_job should be called, but we don't need to verify the exact config_id
+        # since it's a default value in the view
+        mock_empi_obj.create_export_job.assert_called_once()
+        call_args = mock_empi_obj.create_export_job.call_args
+        self.assertEqual(call_args[1]["sink_uri"], "s3://bucket/path/file.csv")
+
+        self.assertEqual(response.status_code, 202)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "job_id": 123,
+                "status": "new",
+                "message": "Export job 123 created for S3 export to s3://bucket/path/file.csv",
+            },
+        )
+
+    @patch("main.views.potential_matches.EMPIService")
+    def test_export_potential_matches_ok_estimate(self, mock_empi: Any) -> None:
+        """Tests export_potential_matches succeeds with estimate only."""
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.estimate_export_count.return_value = 147389
+
+        url = reverse("export_potential_matches")
+        data = {"estimate": True}
+        response = self.client.post(url, data, content_type="application/json")
+
+        mock_empi_obj.estimate_export_count.assert_called_once()
+        self.assertEqual(response.status_code, 200)
+        self.assertDictEqual(
+            response.json(),
+            {
+                "estimated_count": 147389,
+                "message": "Estimated 147,389 potential match pairs to export",
+            },
+        )
+
+    @patch("main.views.potential_matches.EMPIService")
+    def test_export_potential_matches_s3_error(self, mock_empi: Any) -> None:
+        """Tests export_potential_matches handles S3 errors."""
+        mock_empi_obj = mock_empi.return_value
+        mock_empi_obj.create_export_job.side_effect = Exception("S3 error")
+
+        url = reverse("export_potential_matches")
+        data = {"s3_uri": "s3://bucket/path/file.csv"}
+        response = self.client.post(url, data, content_type="application/json")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("Export failed", response.json()["error"]["message"])
+
+    def test_export_potential_matches_invalid_s3_uri(self) -> None:
+        """Tests export_potential_matches validates S3 URI format."""
+        url = reverse("export_potential_matches")
+        data = {"s3_uri": "invalid-uri"}
+        response = self.client.post(url, data, content_type="application/json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Validation failed", response.json()["error"]["message"])

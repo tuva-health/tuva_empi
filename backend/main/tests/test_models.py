@@ -4,7 +4,7 @@ from django.forms import model_to_dict
 from django.test import TestCase
 from django.utils import timezone
 
-from main.models import Config, Job, JobStatus, PersonRecordStaging
+from main.models import Config, Job, PersonRecordStaging
 
 
 class SchemaTestCase(TestCase):
@@ -22,8 +22,9 @@ class SchemaTestCase(TestCase):
         "created": now,
         "updated": now,
         "source_uri": "s3://tuva-empi-example/test",
-        "status": JobStatus.new,
+        "status": "new",  # Serialized as string
         "reason": None,
+        "job_type": "import-person-records",  # Added job_type field
     }
     job: Job
 
@@ -55,7 +56,10 @@ class SchemaTestCase(TestCase):
         cls.config = Config.objects.create(**cls.config_partial)
 
         cls.job_partial["config_id"] = cls.config.id
-        cls.job = Job.objects.create(**cls.job_partial)
+        # Create job with job_type field
+        job_data = cls.job_partial.copy()
+        job_data["job_type"] = "import-person-records"
+        cls.job = Job.objects.create(**job_data)
 
         cls.record_partial["job_id"] = cls.job.id
         PersonRecordStaging.objects.create(**cls.record_partial)
@@ -77,7 +81,11 @@ class SchemaTestCase(TestCase):
             job_dict["config_id"] = job_dict["config"]
             del job_dict["config"]
 
-            self.assertEqual(self.job_partial, job_dict)
+            # Create expected dict with config_id field
+            expected_dict = self.job_partial.copy()
+            expected_dict["config_id"] = self.config.id
+
+            self.assertEqual(expected_dict, job_dict)
             self.assertTrue(isinstance(job.id, int))
         else:
             self.fail("No Staging objects exist")

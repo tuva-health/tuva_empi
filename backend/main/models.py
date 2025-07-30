@@ -47,11 +47,17 @@ class JobStatus(models.TextChoices):
     failed = "failed"
 
 
+class JobType(models.TextChoices):
+    import_person_records = "import-person-records"
+    export_potential_matches = "export-potential-matches"
+
+
 class Job(models.Model):
     id = models.BigAutoField(primary_key=True)
     created = models.DateTimeField(db_default=TransactionNow())
     updated = models.DateTimeField(db_default=TransactionNow())
     config = models.ForeignKey(Config, on_delete=models.DO_NOTHING)
+    job_type = models.TextField(choices=JobType, default=JobType.import_person_records)
     # DEPRECATED
     # TODO: s3_uri has been deleted from the Django model and migration state using
     # SeparateDatabaseAndState (see: 0009_remove_job_s3_uri_state.py). In the next release,

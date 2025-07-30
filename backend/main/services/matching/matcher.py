@@ -21,6 +21,7 @@ from main.models import (
     DbLockId,
     Job,
     JobStatus,
+    JobType,
     MatchEvent,
     MatchEventType,
     MatchGroup,
@@ -1872,7 +1873,9 @@ class Matcher:
 
                     job = (
                         Job.objects.select_for_update()
-                        .filter(status=JobStatus.new)
+                        .filter(
+                            status=JobStatus.new, job_type=JobType.import_person_records
+                        )
                         .order_by("id")
                         .first()
                     )
