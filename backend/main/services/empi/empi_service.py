@@ -1490,6 +1490,9 @@ class EMPIService:
         where each row represents a potential match between two person records.
         The export is designed to handle large datasets without memory issues.
 
+        The export includes source_person_id and birth_date fields to help users
+        trace back to their original input data and better identify individuals.
+
         Args:
             sink: The data sink URI or file.
             estimated_count: Pre-calculated count (optional, for job processing)
@@ -1538,11 +1541,15 @@ class EMPIService:
                         'Person_' || p1.id as person1_id,
                         pr1.first_name as person1_first_name,
                         pr1.last_name as person1_last_name,
+                        pr1.birth_date as person1_birth_date,
                         pr1.data_source as person1_data_source,
+                        pr1.source_person_id as person1_source_id,
                         'Person_' || p2.id as person2_id,
                         pr2.first_name as person2_first_name,
                         pr2.last_name as person2_last_name,
+                        pr2.birth_date as person2_birth_date,
                         pr2.data_source as person2_data_source,
+                        pr2.source_person_id as person2_source_id,
                         sr.match_probability
                     from {match_group_table} mg
                     inner join {splink_result_table} sr on mg.id = sr.match_group_id
@@ -1590,11 +1597,15 @@ class EMPIService:
                         "person1_id",
                         "person1_first_name",
                         "person1_last_name",
+                        "person1_birth_date",
                         "person1_data_source",
+                        "person1_source_id",
                         "person2_id",
                         "person2_first_name",
                         "person2_last_name",
+                        "person2_birth_date",
                         "person2_data_source",
+                        "person2_source_id",
                         "match_probability",
                     ]
                     writer.writerow(headers)
