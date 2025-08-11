@@ -65,7 +65,19 @@ class PotentialMatchesTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(
             response.json(),
-            {"potential_matches": [{**potential_matches[0], "id": "pm_1"}]},
+            {
+                "potential_matches": [{**potential_matches[0], "id": "pm_1"}],
+                "pagination": {
+                    "page": 1,
+                    "page_size": 50,
+                    "total_count": 1,
+                    "total_pages": 1,
+                    "has_next": False,
+                    "has_previous": False,
+                    "next_page": None,
+                    "previous_page": None,
+                },
+            },
         )
 
     @patch("main.views.potential_matches.EMPIService")
@@ -91,7 +103,19 @@ class PotentialMatchesTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(
             response.json(),
-            {"potential_matches": [{**potential_matches[0], "id": "pm_1"}]},
+            {
+                "potential_matches": [{**potential_matches[0], "id": "pm_1"}],
+                "pagination": {
+                    "page": 1,
+                    "page_size": 50,
+                    "total_count": 1,
+                    "total_pages": 1,
+                    "has_next": False,
+                    "has_previous": False,
+                    "next_page": None,
+                    "previous_page": None,
+                },
+            },
         )
 
     @patch("main.views.potential_matches.EMPIService")
@@ -105,7 +129,22 @@ class PotentialMatchesTestCase(TestCase):
         response = self.client.get(url, {})
 
         self.assertEqual(response.status_code, 200)
-        self.assertDictEqual(response.json(), {"potential_matches": potential_matches})
+        self.assertDictEqual(
+            response.json(),
+            {
+                "potential_matches": potential_matches,
+                "pagination": {
+                    "page": 1,
+                    "page_size": 50,
+                    "total_count": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_previous": False,
+                    "next_page": None,
+                    "previous_page": None,
+                },
+            },
+        )
 
     def test_get_potential_matches_invalid_request_method(self) -> None:
         """Tests get_potential_matches rejects request methods besides GET."""
@@ -213,9 +252,11 @@ class PotentialMatchesTestCase(TestCase):
         match_id = "pm_123"
         url = reverse("get_potential_match", args=[match_id])
 
-        response = self.client.get(url)
+        response = self.client.get(url, {"include_metadata": "false"})
 
-        mock_empi_obj.get_potential_match.assert_called_once_with(id=123)
+        mock_empi_obj.get_potential_match.assert_called_once_with(
+            id=123, fields="id,first_name,last_name,data_source,social_security_number"
+        )
         self.assertEqual(response.status_code, 200)
         self.assertDictEqual(
             response.json(),
@@ -269,7 +310,9 @@ class PotentialMatchesTestCase(TestCase):
 
         response = self.client.get(url)
 
-        mock_empi_obj.get_potential_match.assert_called_once_with(id=456)
+        mock_empi_obj.get_potential_match.assert_called_once_with(
+            id=456, fields="id,first_name,last_name,data_source,social_security_number"
+        )
         self.assertEqual(response.status_code, 404)
         self.assertDictEqual(
             response.json(),
@@ -357,7 +400,9 @@ class PotentialMatchesTestCase(TestCase):
         response = self.client.get(url)
         self.client.raise_request_exception = True
 
-        mock_empi_obj.get_potential_match.assert_called_once_with(id=321)
+        mock_empi_obj.get_potential_match.assert_called_once_with(
+            id=321, fields="id,first_name,last_name,data_source,social_security_number"
+        )
         self.assertEqual(response.status_code, 500)
         self.assertIn("error", response.json())
         self.assertTrue(

@@ -669,13 +669,19 @@ class EMPIService:
                 if field == "id":
                     field_mappings.append("'id', pr.id")
                 elif field == "created":
-                    field_mappings.append("'created', to_char(pr.created, %(timestamp_format)s)")
+                    field_mappings.append(
+                        "'created', to_char(pr.created, %(timestamp_format)s)"
+                    )
                 elif field == "person_uuid":
                     field_mappings.append("'person_uuid', mp.uuid")
                 elif field == "person_updated":
-                    field_mappings.append("'person_updated', to_char(pr.person_updated, %(timestamp_format)s)")
+                    field_mappings.append(
+                        "'person_updated', to_char(pr.person_updated, %(timestamp_format)s)"
+                    )
                 elif field == "matched_or_reviewed":
-                    field_mappings.append("'matched_or_reviewed', pr.matched_or_reviewed")
+                    field_mappings.append(
+                        "'matched_or_reviewed', pr.matched_or_reviewed"
+                    )
                 elif field == "data_source":
                     field_mappings.append("'data_source', pr.data_source")
                 elif field == "source_person_id":
@@ -693,7 +699,9 @@ class EMPIService:
                 elif field == "death_date":
                     field_mappings.append("'death_date', pr.death_date")
                 elif field == "social_security_number":
-                    field_mappings.append("'social_security_number', pr.social_security_number")
+                    field_mappings.append(
+                        "'social_security_number', pr.social_security_number"
+                    )
                 elif field == "address":
                     field_mappings.append("'address', pr.address")
                 elif field == "city":

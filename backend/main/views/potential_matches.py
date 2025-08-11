@@ -64,9 +64,7 @@ class GetPotentialMatchRequest(Serializer):
 
     def validate_potential_match_id(self, value: str) -> str:
         if not value.startswith("pm_"):
-            raise serializers.ValidationError(
-                "Invalid PotentialMatch ID"
-            )
+            raise serializers.ValidationError("Invalid PotentialMatch ID")
         return value
 
 
@@ -133,7 +131,9 @@ def get_potential_matches(request: Request) -> Response:
             {**pm, "id": get_object_id(pm["id"], "PotentialMatch")} for pm in results
         ]
 
-        return pagination.create_paginated_response(transformed,page, page_size, response_key="potential_matches")
+        return pagination.create_paginated_response(
+            transformed, page, page_size, response_key="potential_matches"
+        )
     except Exception:
         logger.error("Failed to retrieve potential matches", exc_info=True)
         return Response(error_data("Unexpected internal error"), status=500)
@@ -244,9 +244,7 @@ def get_potential_match(request: Request, id: str) -> Response:
         return Response(error_data("Resource not found"), status=404)
     except Exception:
         logger.error("Failed to retrieve potential match", exc_info=True)
-        return Response(
-            error_data("Unexpected internal error"), status=500
-        )
+        return Response(error_data("Unexpected internal error"), status=500)
 
 
 @extend_schema(

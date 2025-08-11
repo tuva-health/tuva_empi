@@ -1050,13 +1050,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
                         cast(
                             PersonRecordDict,
                             {
-                                **select_keys(
-                                    record,
-                                    record.keys() - {"job_id", "sha256", "person_id"},
-                                ),
-                                "created": record["created"].isoformat(),
-                                "person_uuid": str(person.uuid),
-                                "person_updated": record["person_updated"].isoformat(),
+                                "id": record["id"],
+                                "first_name": record["first_name"],
+                                "last_name": record["last_name"],
+                                "data_source": record["data_source"],
                             },
                         )
                         for record in PersonRecord.objects.filter(
@@ -1105,13 +1102,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
                         cast(
                             PersonRecordDict,
                             {
-                                **select_keys(
-                                    record,
-                                    record.keys() - {"job_id", "sha256", "person_id"},
-                                ),
-                                "created": record["created"].isoformat(),
-                                "person_uuid": str(person.uuid),
-                                "person_updated": record["person_updated"].isoformat(),
+                                "id": record["id"],
+                                "first_name": record["first_name"],
+                                "last_name": record["last_name"],
+                                "data_source": record["data_source"],
                             },
                         )
                         for record in PersonRecord.objects.filter(
@@ -1166,13 +1160,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
                         cast(
                             PersonRecordDict,
                             {
-                                **select_keys(
-                                    record,
-                                    record.keys() - {"job_id", "sha256", "person_id"},
-                                ),
-                                "created": record["created"].isoformat(),
-                                "person_uuid": str(person.uuid),
-                                "person_updated": record["person_updated"].isoformat(),
+                                "id": record["id"],
+                                "first_name": record["first_name"],
+                                "last_name": record["last_name"],
+                                "data_source": record["data_source"],
                             },
                         )
                         for record in PersonRecord.objects.filter(
@@ -1228,13 +1219,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
                         cast(
                             PersonRecordDict,
                             {
-                                **select_keys(
-                                    record,
-                                    record.keys() - {"job_id", "sha256", "person_id"},
-                                ),
-                                "created": record["created"].isoformat(),
-                                "person_uuid": str(person.uuid),
-                                "person_updated": record["person_updated"].isoformat(),
+                                "id": record["id"],
+                                "first_name": record["first_name"],
+                                "last_name": record["last_name"],
+                                "data_source": record["data_source"],
                             },
                         )
                         for record in PersonRecord.objects.filter(
@@ -1326,13 +1314,10 @@ class PotentialMatchesTestCase(TransactionTestCase):
                         cast(
                             PersonRecordDict,
                             {
-                                **select_keys(
-                                    record,
-                                    record.keys() - {"job_id", "sha256", "person_id"},
-                                ),
-                                "created": record["created"].isoformat(),
-                                "person_uuid": str(person.uuid),
-                                "person_updated": record["person_updated"].isoformat(),
+                                "id": record["id"],
+                                "first_name": record["first_name"],
+                                "last_name": record["last_name"],
+                                "data_source": record["data_source"],
                             },
                         )
                         for record in PersonRecord.objects.filter(
