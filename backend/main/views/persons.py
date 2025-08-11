@@ -127,7 +127,9 @@ def get_persons(request: Request) -> Response:
         for p in persons
     ]
 
-    return pagination.create_paginated_response(results, page, page_size, response_key="persons")
+    return pagination.create_paginated_response(
+        results, page, page_size, response_key="persons"
+    )
 
 
 @extend_schema(
