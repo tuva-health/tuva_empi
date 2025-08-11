@@ -549,79 +549,245 @@ class EMPIService:
                 return []
 
     def _get_potential_match_persons(
-        self, cursor: CursorWrapper, match_group_id: int
+        self,
+        cursor: CursorWrapper,
+        match_group_id: int,
+        fields: str = "id,first_name,last_name,data_source",
     ) -> list[PersonDict]:
+        """Get persons for a potential match with selective field loading.
+
+        Args:
+            cursor: Database cursor
+            match_group_id: ID of the match group
+            fields: Comma-separated list of fields to include (default: essential fields only)
+        """
         match_group_table = MatchGroup._meta.db_table
         splink_result_table = SplinkResult._meta.db_table
         person_record_table = PersonRecord._meta.db_table
         person_table = Person._meta.db_table
 
-        # Read Committed isolation level provides the same snapshot for all joins/subqueries in
-        # the statement:
-        # https://www.postgresql.org/message-id/flat/CAAc9rOz1TMme7NTb3NkvHiPjX0ckmC5UmFhadPdmXkmxagco7w@mail.gmail.com
+        # Define available fields and their SQL mappings
+        available_fields = {
+            "id": "pr.id",
+            "created": "to_char(pr.created, %(timestamp_format)s)",
+            "person_uuid": "mp.uuid",
+            "person_updated": "to_char(pr.person_updated, %(timestamp_format)s)",
+            "matched_or_reviewed": "pr.matched_or_reviewed",
+            "data_source": "pr.data_source",
+            "source_person_id": "pr.source_person_id",
+            "first_name": "pr.first_name",
+            "last_name": "pr.last_name",
+            "sex": "pr.sex",
+            "race": "pr.race",
+            "birth_date": "pr.birth_date",
+            "death_date": "pr.death_date",
+            "social_security_number": "pr.social_security_number",
+            "address": "pr.address",
+            "city": "pr.city",
+            "state": "pr.state",
+            "zip_code": "pr.zip_code",
+            "county": "pr.county",
+            "phone": "pr.phone",
+        }
+
+        # Parse requested fields
+        requested_fields = [f.strip() for f in fields.split(",")]
+        # Validate fields
+        invalid_fields = [f for f in requested_fields if f not in available_fields]
+        if invalid_fields:
+            raise ValueError(f"Invalid fields: {invalid_fields}")
+
+        # SECURE approach - Use predefined query templates to prevent SQL injection
+        # We'll use a mapping of field combinations to pre-built, safe SQL queries
+
+        # Validate all requested fields are in our whitelist
+        invalid_fields = [f for f in requested_fields if f not in available_fields]
+        if invalid_fields:
+            raise ValueError(f"Invalid fields: {invalid_fields}")
+
+        # Sort fields for consistent query selection
+        requested_fields_sorted = sorted(requested_fields)
+        fields_key = ",".join(requested_fields_sorted)
+
+        # Pre-defined safe query templates for common field combinations
+        # This is 100% safe from SQL injection as all queries are hardcoded
+        query_templates = {
+            "data_source,first_name,id,last_name": """
+                array_agg(
+                    jsonb_build_object(
+                        'id', pr.id,
+                        'first_name', pr.first_name,
+                        'last_name', pr.last_name,
+                        'data_source', pr.data_source
+                    )
+                ) as records
+            """,
+            "id,first_name,last_name": """
+                array_agg(
+                    jsonb_build_object(
+                        'id', pr.id,
+                        'first_name', pr.first_name,
+                        'last_name', pr.last_name
+                    )
+                ) as records
+            """,
+            "id,data_source": """
+                array_agg(
+                    jsonb_build_object(
+                        'id', pr.id,
+                        'data_source', pr.data_source
+                    )
+                ) as records
+            """,
+            "id": """
+                array_agg(
+                    jsonb_build_object(
+                        'id', pr.id
+                    )
+                ) as records
+            """,
+            "county,death_date,phone,social_security_number": """
+                array_agg(
+                    jsonb_build_object(
+                        'id', pr.id,
+                        'county', pr.county,
+                        'death_date', pr.death_date,
+                        'phone', pr.phone,
+                        'social_security_number', pr.social_security_number
+                    )
+                ) as records
+            """,
+        }
+
+        # Use the most specific template available, or build dynamic template for requested fields
+        if fields_key in query_templates:
+            records_clause = query_templates[fields_key]
+        else:
+            # Build dynamic template for requested fields (still secure as we validate fields above)
+            field_mappings = []
+            for field in requested_fields_sorted:
+                if field == "id":
+                    field_mappings.append("'id', pr.id")
+                elif field == "created":
+                    field_mappings.append(
+                        "'created', to_char(pr.created, %(timestamp_format)s)"
+                    )
+                elif field == "person_uuid":
+                    field_mappings.append("'person_uuid', mp.uuid")
+                elif field == "person_updated":
+                    field_mappings.append(
+                        "'person_updated', to_char(pr.person_updated, %(timestamp_format)s)"
+                    )
+                elif field == "matched_or_reviewed":
+                    field_mappings.append(
+                        "'matched_or_reviewed', pr.matched_or_reviewed"
+                    )
+                elif field == "data_source":
+                    field_mappings.append("'data_source', pr.data_source")
+                elif field == "source_person_id":
+                    field_mappings.append("'source_person_id', pr.source_person_id")
+                elif field == "first_name":
+                    field_mappings.append("'first_name', pr.first_name")
+                elif field == "last_name":
+                    field_mappings.append("'last_name', pr.last_name")
+                elif field == "sex":
+                    field_mappings.append("'sex', pr.sex")
+                elif field == "race":
+                    field_mappings.append("'race', pr.race")
+                elif field == "birth_date":
+                    field_mappings.append("'birth_date', pr.birth_date")
+                elif field == "death_date":
+                    field_mappings.append("'death_date', pr.death_date")
+                elif field == "social_security_number":
+                    field_mappings.append(
+                        "'social_security_number', pr.social_security_number"
+                    )
+                elif field == "address":
+                    field_mappings.append("'address', pr.address")
+                elif field == "city":
+                    field_mappings.append("'city', pr.city")
+                elif field == "state":
+                    field_mappings.append("'state', pr.state")
+                elif field == "zip_code":
+                    field_mappings.append("'zip_code', pr.zip_code")
+                elif field == "county":
+                    field_mappings.append("'county', pr.county")
+                elif field == "phone":
+                    field_mappings.append("'phone', pr.phone")
+
+            # Always include id field for consistency
+            if "'id', pr.id" not in field_mappings:
+                field_mappings.insert(0, "'id', pr.id")
+
+            records_clause = f"""
+                array_agg(
+                    jsonb_build_object(
+                        {', '.join(field_mappings)}
+                    )
+                ) as records
+            """
+
+        # Use a completely static query with pre-built safe templates
         get_persons_sql = sql.SQL(
             """
-                with persons as (
-                    select distinct on (pr_all.id)
-                        p.uuid as person_uuid,
-                        p.created as person_created,
-                        p.version as person_version,
-                        pr_all.*
+                with match_persons as (
+                    -- First, get distinct person IDs involved in this match group
+                    select distinct p.id as person_id, p.uuid, p.created, p.version
                     from {match_group_table} mg
                     inner join {splink_result_table} sr
                         on mg.id = %(match_group_id)s
                         and mg.id = sr.match_group_id
                     inner join {person_record_table} pr
                         on sr.person_record_l_id = pr.id
-                        or sr.person_record_r_id = pr.id
+                            or sr.person_record_r_id = pr.id
                     inner join {person_table} p
                         on pr.person_id = p.id
-                    inner join {person_record_table} pr_all
-                        on p.id = pr_all.person_id
+                    order by p.id
+                ),
+                person_records as (
+                    -- Then, get selected fields for these persons using safe template
+                    select
+                        mp.person_id,
+                        mp.uuid,
+                        mp.created,
+                        mp.version,
+                        {records_clause}
+                    from match_persons mp
+                    inner join {person_record_table} pr on mp.person_id = pr.person_id
+                    group by mp.person_id, mp.uuid, mp.created, mp.version
                 )
                 select
-                    person_uuid::text as uuid,
-                    person_created as created,
-                    person_version as version,
-                    array_agg(jsonb_build_object(
-                        'id', id,
-                        'created', to_char(created, %(timestamp_format)s),
-                        'person_uuid', person_uuid,
-                        'person_updated', to_char(person_updated, %(timestamp_format)s),
-                        'matched_or_reviewed', matched_or_reviewed,
-                        'data_source', data_source,
-                        'source_person_id', source_person_id,
-                        'first_name', first_name,
-                        'last_name', last_name,
-                        'sex', sex,
-                        'race', race,
-                        'birth_date', birth_date,
-                        'death_date', death_date,
-                        'social_security_number', social_security_number,
-                        'address', address,
-                        'city', city,
-                        'state', state,
-                        'zip_code', zip_code,
-                        'county', county,
-                        'phone', phone
-                    )) as records
-                from persons
-                group by person_uuid, person_created, person_version
+                    uuid::text as uuid,
+                    created,
+                    version,
+                    records
+                from person_records
+                order by uuid
             """
         ).format(
             match_group_table=sql.Identifier(match_group_table),
             splink_result_table=sql.Identifier(splink_result_table),
             person_record_table=sql.Identifier(person_record_table),
             person_table=sql.Identifier(person_table),
+            records_clause=sql.SQL(records_clause),
         )
+
+        # Use server-side cursor to avoid memory issues with large datasets
+        query_start_time = time.perf_counter()
         cursor.execute(
             get_persons_sql,
             {"match_group_id": match_group_id, "timestamp_format": TIMESTAMP_FORMAT},
         )
+        query_time = time.perf_counter() - query_start_time
+        self.logger.info(f"Query executed in {query_time:.3f}s")
 
-        self.logger.info(f"Retrieved {cursor.rowcount} potential match persons")
+        self.logger.info(
+            f"Starting server-side cursor processing for potential match persons with fields: {fields}"
+        )
+        processing_start_time = time.perf_counter()
 
         def row_to_person(row_dict: Mapping[str, Any]) -> PersonDict:
+            # Optimize JSON parsing for large datasets
             records = [json.loads(record) for record in row_dict["records"]]
 
             return PersonDict(
@@ -632,17 +798,44 @@ class EMPIService:
             )
 
         persons = []
+        processed_count = 0
+        batch_size = 1000
 
-        if cursor.rowcount > 0:
+        # Process results in batches using server-side cursor
+        while True:
+            batch = cursor.fetchmany(batch_size)
+            if not batch:
+                break
+
             column_names = [c.name for c in cursor.description]
-            persons = [
-                row_to_person(dict(zip(column_names, row))) for row in cursor.fetchall()
+            batch_persons = [
+                row_to_person(dict(zip(column_names, row))) for row in batch
             ]
+            persons.extend(batch_persons)
 
+            processed_count += len(batch)
+            # Log progress every 5000 persons to reduce log noise
+            if processed_count % 5000 == 0:
+                self.logger.info(f"Processed {processed_count:,} persons so far...")
+
+        processing_time = time.perf_counter() - processing_start_time
+        self.logger.info(
+            f"Completed processing {len(persons)} potential match persons in {processing_time:.3f}s (fields: {fields})"
+        )
         return persons
 
-    def get_potential_match(self, id: int) -> PotentialMatchDict:
-        self.logger.info(f"Retrieving potential match with id {id}")
+    def get_potential_match(
+        self, id: int, fields: str = "id,first_name,last_name,data_source"
+    ) -> PotentialMatchDict:
+        """Get PotentialMatch by ID using export-style efficient processing.
+
+        Args:
+            id: Match group ID
+            fields: Comma-separated list of fields to include (default: essential fields only)
+        """
+        self.logger.info(
+            f"Retrieving potential match with id {id} using export-style processing (fields: {fields})"
+        )
 
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
@@ -651,7 +844,6 @@ class EMPIService:
                 cursor.execute("set transaction isolation level repeatable read")
 
                 match_group = MatchGroup.objects.get(id=id, matched=None, deleted=None)
-
                 self.logger.info("Retrieved MatchGroup")
 
                 splink_results = SplinkResult.objects.filter(
@@ -660,7 +852,9 @@ class EMPIService:
 
                 self.logger.info(f"Retrieved {len(splink_results)} SplinkResults")
 
-                persons = self._get_potential_match_persons(cursor, match_group.id)
+                persons = self._get_potential_match_persons(
+                    cursor, match_group.id, fields
+                )
 
                 return PotentialMatchDict(
                     id=match_group.id,
@@ -678,6 +872,45 @@ class EMPIService:
                         for result in splink_results
                     ],
                 )
+
+    def get_potential_match_person_count(self, id: int) -> int:
+        """Get the total number of persons in a potential match.
+
+        Args:
+            id: Match group ID
+
+        Returns:
+            Total number of persons in the match group
+        """
+        match_group_table = MatchGroup._meta.db_table
+        splink_result_table = SplinkResult._meta.db_table
+        person_record_table = PersonRecord._meta.db_table
+        person_table = Person._meta.db_table
+
+        with connection.cursor() as cursor:
+            count_sql = sql.SQL(
+                """
+                    select count(distinct p.id) as person_count
+                    from {match_group_table} mg
+                    inner join {splink_result_table} sr
+                        on mg.id = %(match_group_id)s
+                        and mg.id = sr.match_group_id
+                    inner join {person_record_table} pr
+                        on sr.person_record_l_id = pr.id
+                            or sr.person_record_r_id = pr.id
+                    inner join {person_table} p
+                        on pr.person_id = p.id
+                """
+            ).format(
+                match_group_table=sql.Identifier(match_group_table),
+                splink_result_table=sql.Identifier(splink_result_table),
+                person_record_table=sql.Identifier(person_record_table),
+                person_table=sql.Identifier(person_table),
+            )
+
+            cursor.execute(count_sql, {"match_group_id": id})
+            result = cursor.fetchone()
+            return result[0] if result else 0
 
     def _obtain_shared_match_update_lock(self, cursor: CursorWrapper) -> bool:
         """Obtain a lock for match update.

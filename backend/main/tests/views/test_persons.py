@@ -70,7 +70,17 @@ class PersonsTestCase(TestCase):
                         ),
                         "id": "p_" + persons[0]["uuid"],
                     }
-                ]
+                ],
+                "pagination": {
+                    "page": 1,
+                    "page_size": 50,
+                    "total_count": 1,
+                    "total_pages": 1,
+                    "has_next": False,
+                    "has_previous": False,
+                    "next_page": None,
+                    "previous_page": None,
+                },
             },
         )
 
@@ -104,7 +114,17 @@ class PersonsTestCase(TestCase):
                         ),
                         "id": "p_" + persons[0]["uuid"],
                     }
-                ]
+                ],
+                "pagination": {
+                    "page": 1,
+                    "page_size": 50,
+                    "total_count": 1,
+                    "total_pages": 1,
+                    "has_next": False,
+                    "has_previous": False,
+                    "next_page": None,
+                    "previous_page": None,
+                },
             },
         )
 
@@ -119,7 +139,22 @@ class PersonsTestCase(TestCase):
         response = self.client.get(url, {})
 
         self.assertEqual(response.status_code, 200)
-        self.assertDictEqual(response.json(), {"persons": persons})
+        self.assertDictEqual(
+            response.json(),
+            {
+                "persons": persons,
+                "pagination": {
+                    "page": 1,
+                    "page_size": 50,
+                    "total_count": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_previous": False,
+                    "next_page": None,
+                    "previous_page": None,
+                },
+            },
+        )
 
     def test_get_persons_invalid_request_method(self) -> None:
         """Tests get_persons rejects request methods besides GET."""
