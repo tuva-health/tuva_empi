@@ -349,7 +349,7 @@ class EMPIService:
                     # TODO add as util function in main.util.sql
 
                     copy_sql = sql.SQL(
-                        "copy {table} ({columns}) from stdin with (format csv, delimiter ',', header, force_not_null ({columns}))"
+                        "copy {table} ({columns}) from stdin with (format csv, delimiter ',', header)"
                     ).format(
                         table=sql.Identifier(temp_table),
                         columns=sql.SQL(",").join(
