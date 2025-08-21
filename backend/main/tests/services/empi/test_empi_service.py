@@ -97,8 +97,8 @@ class ImportPersonRecordsTestCase(TestCase):
 
         self.assertEqual(
             records.filter(source_person_id="a5")[0].first_name,
-            "",
-            "Empty values in the CSV should result in empty strings, not null values",
+            None,
+            "Empty values in the CSV should result in null values",
         )
 
         self.assertEqual(
