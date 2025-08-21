@@ -549,7 +549,7 @@ class Matcher:
             ),
         )
         dtype = {
-            col: ("int64" if col in {"id", "job_id"} else "string")
+            col: ("int64" if col in {"id", "job_id"} else "object")
             for col in csv_col_names
         }
         df = extract_df(
@@ -557,7 +557,7 @@ class Matcher:
             extract_sql,
             dtype,
             query_params={"timestamp_format": TIMESTAMP_FORMAT},
-            na_filter=False,
+            na_filter=True,
         )
 
         self.logger.info(f"Extracted {len(df)} PersonRecord rows")
@@ -647,6 +647,63 @@ class Matcher:
             config.splink_settings,
             db_api=DuckDBAPI(connection=ddb_conn, output_schema="main"),
         )
+
+        # DEBUG: Check DuckDB data for NULL values and string representations
+        self.logger.info("=== DEBUG: Checking DuckDB data ===")
+        try:
+            # Check the input data in DuckDB using the correct table name
+            input_data = ddb_conn.execute(
+                "SELECT * FROM __splink__input_table_0 LIMIT 5"
+            ).df()
+            self.logger.info(f"DuckDB input data shape: {input_data.shape}")
+            self.logger.info("DuckDB input data sample:")
+            for col in input_data.columns:
+                if col not in ["id", "job_id"]:
+                    null_count = input_data[col].isnull().sum()
+                    self.logger.info(
+                        f"  {col}: {null_count} NULL values out of {len(input_data)}"
+                    )
+
+                    # Check for string representations of NULL
+                    if input_data[col].dtype == "object":
+                        unique_values = input_data[col].dropna().unique()
+                        empty_strings = [v for v in unique_values if v == ""]
+                        null_strings = [
+                            v for v in unique_values if str(v).lower() == "null"
+                        ]
+                        nan_strings = [
+                            v
+                            for v in unique_values
+                            if str(v).lower() in ["nan", "n/a", "na"]
+                        ]
+                        na_strings = [v for v in unique_values if str(v) == "<NA>"]
+
+                        if empty_strings:
+                            self.logger.info(
+                                f"    Found {len(empty_strings)} empty strings: {empty_strings}"
+                            )
+                        if null_strings:
+                            self.logger.info(
+                                f"    Found {len(null_strings)} 'null' strings: {null_strings}"
+                            )
+                        if nan_strings:
+                            self.logger.info(
+                                f"    Found {len(nan_strings)} 'nan' strings: {nan_strings}"
+                            )
+                        if na_strings:
+                            self.logger.info(
+                                f"    Found {len(na_strings)} '<NA>' strings: {na_strings}"
+                            )
+
+                    if null_count > 0:
+                        sample_null = input_data[input_data[col].isnull()].iloc[0]
+                        self.logger.info(
+                            f"    Sample NULL record: {sample_null.to_dict()}"
+                        )
+        except Exception as e:
+            self.logger.info(f"DEBUG error: {e}")
+        self.logger.info("=== END DEBUG ===")
+
         splink_df = linker.inference.predict()
 
         splink_df.physical_name

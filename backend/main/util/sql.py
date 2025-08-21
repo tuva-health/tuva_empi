@@ -153,7 +153,7 @@ def extract_df(
     parse_dates: list[str] = [],
 ) -> pd.DataFrame:
     stmt = sql.SQL(
-        "copy ({query}) to stdin with (format csv, header, force_quote *, delimiter ',')"
+        "copy ({query}) to stdin with (format csv, header, delimiter ',')"
     ).format(
         query=query,
     )
