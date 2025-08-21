@@ -386,8 +386,7 @@ class MatcherTestCase(TestCase):
                     inner join {person_record_table} pr on
                         p.id = pr.person_id
                     """
-                )
-                .format(
+                ).format(
                     person_action_table=sql.Identifier(person_action_table),
                     person_record_table=sql.Identifier(person_record_table),
                     person_table=sql.Identifier(person_table),
@@ -406,7 +405,7 @@ class MatcherTestCase(TestCase):
         raw_row = raw_results[0]
         # Create a dictionary mapping column names to values
         row_dict = dict(zip(column_names, raw_row))
-        loaded_person_action = type('MockPersonAction', (), row_dict)()
+        loaded_person_action = type("MockPersonAction", (), row_dict)()
 
         self.assertTrue(isinstance(loaded_person_action.id, int))
         self.assertEqual(loaded_person_action.match_event_id, match_event.id)
