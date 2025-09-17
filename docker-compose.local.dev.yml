@@ -1,0 +1,238 @@
+name: tuva-empi
+
+services:
+  localstack:
+    # https://hub.docker.com/layers/localstack/localstack/s3-latest/images/sha256-018356a92323720b4b683372ef83e4fb143db933ae3355fbd4e851afef179e2c?context=explore
+    image: localstack/localstack:s3-latest@sha256:b5758a58e8500838464a0ee971229379ac933482b57f9abb2f68ff22d55c3320
+    ports:
+      - 127.0.0.1:4566:4566
+    networks:
+      - app-network
+
+  db:
+    # https://hub.docker.com/layers/library/postgres/16/images/sha256-295787823185868c4679563715b0a7a07309387f3836117f1b0984d1bfc2bd24
+    image: postgres:16@sha256:e38a7fe2234174d0eb69b5467d346e1bb193c09f98adc229fc9df30fe364dd4a
+    environment:
+      POSTGRES_DB: tuva_empi
+      POSTGRES_USER: tuva_empi
+      POSTGRES_PASSWORD: tuva_empi
+    volumes:
+      - db-data:/var/lib/postgresql/data:cached
+    networks:
+      - app-network
+    ports:
+      - 127.0.0.1:5432:5432
+
+  backend-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["migrate"]
+    depends_on:
+      db:
+        condition: service_started
+    environment:
+      PYTHONUNBUFFERED: 1
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+    volumes:
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+    networks:
+      - app-network
+    restart: on-failure
+
+  backend-bootstrap:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["bootstrap"]
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+      keycloak-init:
+        condition: service_completed_successfully
+    environment:
+      PYTHONUNBUFFERED: 1
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    volumes:
+      # If you'd like to mount an AWS config in order to access AWS
+      # APIs, you can. We don't mount it by default.
+      - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+    networks:
+      - app-network
+
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      backend-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      PYTHONUNBUFFERED: 1
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    volumes:
+      # If you'd like to mount an AWS config in order to access AWS
+      # APIs, you can. We don't mount it by default.
+      - ${AWS_CONFIG_DIR:-./infra/common/backend/aws-dir-placeholder}:/root/.aws
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+    networks:
+      - app-network
+    expose:
+      - "8000"
+    ports:
+      - 127.0.0.1:8000:8000
+    healthcheck:
+      test: "curl -fs http://localhost:8000/api/v1/health-check || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  backend-matching-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["matching-service"]
+    depends_on:
+      backend-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      PYTHONUNBUFFERED: 1
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+    volumes:
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+    networks:
+      - app-network
+
+  backend-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["process_export_jobs", "--sleep", "60", "--max-jobs-per-run", "3"]
+    depends_on:
+      backend-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      PYTHONUNBUFFERED: 1
+      TUVA_EMPI_CONFIG_FILE: /usr/local/etc/tuva-empi/deployment.json
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+    volumes:
+      - ${TUVA_EMPI_CONFIG_FILE}:/usr/local/etc/tuva-empi/deployment.json
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    networks:
+      - app-network
+    expose:
+      - "3000"
+    ports:
+      - 127.0.0.1:3000:3000
+    healthcheck:
+      test: "curl -fs http://localhost:3000 || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  nginx:
+    # https://hub.docker.com/layers/library/nginx/1.27.4-alpine/images/sha256-a71e0884a7f1192ecf5decf062b67d46b54ad63f0cc1b8aa7e705f739a97c2fc
+    image: nginx:1.27.4-alpine@sha256:4ff102c5d78d254a6f0da062b3cf39eaf07f01eec0927fd21e219d0af8bc0591
+    depends_on:
+      backend-api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./infra/demo/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - app-network
+    expose:
+      - "80"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    networks:
+      - app-network
+    ports:
+      - 127.0.0.1:8080:8080
+    command: ["start-dev", "--hostname=http://localhost:8080", "--hostname-strict=false", "--hostname-backchannel-dynamic=true"]
+
+  keycloak-init:
+    build:
+      context: ./infra/common/keycloak-init
+      dockerfile: Dockerfile
+    depends_on:
+      - keycloak
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_REALM: ${KC_REALM}
+      KC_CLIENT_ID: ${KC_CLIENT_ID}
+      KC_CLIENT_SECRET: ${KC_CLIENT_SECRET}
+      KC_CLIENT_REDIRECT_URL: http://localhost:9000/oauth2/callback
+      KC_USER_USERNAME: ${KC_USER_USERNAME}
+      KC_USER_EMAIL: ${KC_USER_EMAIL}
+      KC_USER_PASSWORD: ${KC_USER_PASSWORD}
+    networks:
+      - app-network
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.2
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:9000/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://nginx
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:9000
+      OAUTH2_PROXY_SCOPE: ${OAUTH2_PROXY_SCOPE}
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_WHITELIST_DOMAINS: localhost,backend
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: true
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: true
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: true
+      OAUTH2_PROXY_SKIP_OIDC_EMAIL_VERIFICATION: true
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OAUTH2_PROXY_OIDC_ISSUER_URL}
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+      OAUTH2_PROXY_COOKIE_REFRESH: 240s
+      OAUTH2_PROXY_PROMPT: consent
+      OAUTH2_PROXY_BACKEND_LOGOUT_URL: ${OAUTH2_PROXY_BACKEND_LOGOUT_URL}
+    networks:
+      - app-network
+    ports:
+      - 127.0.0.1:9000:9000
+
+
+volumes:
+  db-data:
+  keycloak-data:
+
+
+networks:
+  app-network:
+    driver: bridge

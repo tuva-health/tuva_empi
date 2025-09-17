@@ -38,6 +38,7 @@ from main.models import (
 )
 from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
 from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
+from main.util.record_preprocessor import create_transformation_functions, transform_all_columns, cleanup_records
 
 
 class PartialConfigDict(TypedDict):
@@ -332,38 +333,31 @@ class EMPIService:
                 with connection.cursor() as cursor:
                     # Create job
                     job = self.create_job(source, config_id)
-
                     table = PersonRecordStaging._meta.db_table
                     temp_table = table + "_temp"
 
-                    # Create temporary table like PersonRecord table but without
-                    # id, created or job_id columns
+                    # 1: Create temporary table
+                    self.logger.info("Creating temporary table")
+                    self._create_raw_temp_table(cursor, temp_table, csv_col_names)
 
-                    create_temp_table_like(cursor, table=temp_table, like_table=table)
-                    drop_column(cursor, temp_table, "id")
-                    drop_column(cursor, temp_table, "created")
-                    drop_column(cursor, temp_table, "job_id")
-                    drop_column(cursor, temp_table, "row_number")
+                    # 2: Create all transformation functions
+                    self.logger.info("Creating preprocessing transformations")
+                    create_transformation_functions(cursor)
 
-                    # Load person records from S3 object into temporary table
+                    # 3. Apply transformations
+                    self.logger.info("Applying preprocessing transformations")
+                    transform_all_columns(cursor, temp_table)
+
+                    # 4. clean up records
+                    self.logger.info("Cleaning up invalid records")
+                    cleanup_records(cursor, temp_table)
+
                     # TODO add as util function in main.util.sql
-
-                    copy_sql = sql.SQL(
-                        "copy {table} ({columns}) from stdin with (format csv, delimiter ',', header)"
-                    ).format(
-                        table=sql.Identifier(temp_table),
-                        columns=sql.SQL(",").join(
-                            [sql.Identifier(col) for col in csv_col_names]
-                        ),
-                    )
-
-                    with open_source(source) as f, cursor.copy(copy_sql) as copy:
-                        while chunk := f.read(DEFAULT_BUFFER_SIZE):
-                            copy.write(chunk)
 
                     # Load data from temporary table into PersonRecordStaging table,
                     # including job_id column
 
+                    self.logger.info("Inserting into staging table")
                     insert_sql = sql.SQL(
                         """
                             insert into {table} (job_id, created, {columns})
@@ -377,9 +371,9 @@ class EMPIService:
                             [sql.Identifier(col) for col in csv_col_names]
                         ),
                     )
-
                     cursor.execute(insert_sql, {"job_id": job.id})
-
+                    final_count = cursor.rowcount
+                    self.logger.info(f"successfully inserted {final_count} records")
                     return job.id
 
         except (DataError, IntegrityError) as e:
@@ -2056,3 +2050,16 @@ class EMPIService:
             )
 
             return estimated_count
+
+
+    @staticmethod
+    def _create_raw_temp_table(cursor, temp_table: str, columns: list):
+        """Create temporary table with all TEXT columns for raw data loading."""
+        column_defs = [f'"{col}" TEXT' for col in columns]
+
+        create_sql = f"""
+            CREATE TEMP TABLE {temp_table} (
+                {', '.join(column_defs)}
+            )
+        """
+        cursor.execute(create_sql)
