@@ -1,6 +1,9 @@
+import re
+
 from django.db.backends.utils import CursorWrapper
 from django.db import DatabaseError
 import psycopg
+from psycopg import sql
 import logging
 
 
@@ -146,39 +149,19 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
                     RETURN NULL;
                 END IF;
 
-                -- Normalize to lowercase and trim
-                sex_value := LOWER(TRIM(sex_value));
-
                 -- Convert various representations to standard values
                 sex_value := CASE sex_value
                     -- Male variations
                     WHEN 'm' THEN 'M'
                     WHEN 'male' THEN 'M'
-                    WHEN 'man' THEN 'M'
-                    WHEN 'boy' THEN 'M'
                     WHEN '1' THEN 'M'
                     
                     -- Female variatios  
                     WHEN 'f' THEN 'F'
                     WHEN 'female' THEN 'F'
-                    WHEN 'woman' THEN 'F'
-                    WHEN 'girl' THEN 'F'
-                    WHEN '2' THEN 'F'
                     
                     -- Unknown/Other variations → convert to NULL
                     WHEN 'unknown' THEN NULL
-                    WHEN 'unk' THEN NULL
-                    WHEN 'u' THEN NULL
-                    WHEN 'other' THEN NULL
-                    WHEN 'o' THEN NULL
-                    WHEN 'n/a' THEN NULL
-                    WHEN 'na' THEN NULL
-                    WHEN '0' THEN NULL
-                    WHEN '9' THEN NULL
-                    
-                    -- If it's already M or F, keep it
-                    WHEN 'M' THEN 'M'
-                    WHEN 'F' THEN 'F'
                     
                     -- Anything else becomes NULL
                     ELSE NULL
@@ -214,7 +197,7 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
             $$ LANGUAGE plpgsql IMMUTABLE;
         """)
 
-        # Birth date normalization 
+        # Birth_date normalization
         db_cursor.execute(r"""
             CREATE OR REPLACE FUNCTION normalize_birth_date(birth_date TEXT)
             RETURNS TEXT AS $$
@@ -406,7 +389,7 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
 
         # State normalization
         db_cursor.execute(r"""
-            CREATE OR REPLACE FUNCTION normalize_state(state TEX)
+            CREATE OR REPLACE FUNCTION normalize_state(state TEXT)
             RETURNS TEXT AS $$
             BEGIN
                 IF state IS NULL OR TRIM(state) = '' THEN
@@ -491,12 +474,12 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
                 -- Remove known junk/placeholder numbers
                 IF phone IN ('0000000000', '1234567890', '1111111111') THEN
                     RETURN NULL;
-                    END IF;
+                END IF;
 
                 -- Remove numbers with 7+ consecutive identical digits
                 IF phone ~ '(.)\1{6,}' THEN
                     RETURN NULL;
-                    END IF;
+                END IF;
 
                 -- Keep only 10-digit phone numbers
                 IF LENGTH(phone) = 10 THEN
@@ -526,13 +509,19 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
             f"Failed to create PostgreSQL transformation functions - unexpected error during function creation: {e}")
         return False
 
-
 def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> bool:
     """Apply all transformations in a single UPDATE statement."""
 
+    # Validate first to guard again SQL injection
+    # Only allow alphanumeric, underscores
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', temp_table):
+        logger.error(f"Invalid table name: {temp_table}")
+        return False
+
     try:
-        transform_sql = fr"""
-            UPDATE {temp_table} SET
+        # TODO - this is currently 1 step. For speed. Do we want more information on where things fail?
+        transform_sql = sql.SQL("""
+            UPDATE {table_name} SET
                 first_name = normalize_first_name(first_name),
                 last_name = normalize_last_name(last_name),
                 sex = normalize_sex(sex),
@@ -545,8 +534,7 @@ def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> bool:
                 state = normalize_state(state),
                 zip_code = normalize_zip(zip_code),
                 phone = normalize_phone(phone)            
-        """.format(table=temp_table)
-
+        """).format(table_name=sql.Identifier(temp_table))
         db_cursor.execute(transform_sql)
         return True
 
@@ -567,27 +555,38 @@ def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> bool:
             f"Failed to apply data transformations to table '{temp_table}' - unexpected error during column transformation: {e}")
         return False
 
+
 def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> bool:
     """Remove invalid records and duplicates."""
+
+    # Validate table name
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', temp_table):
+        logger.error(f"Invalid table name: {temp_table}")
+        return False
+
     try:
         # Remove records with null source_person_id or '' after trimming
-        db_cursor.execute(f"""
-            DELETE FROM {temp_table}
+        # Remove records with null source_person_id or '' after trimming
+        delete_nulls_sql = sql.SQL("""
+            DELETE FROM {table_name}
             WHERE source_person_id IS NULL
-                OR TRIM(source_person_id) = ''
-        """)
+                OR TRIM (source_person_id) = ''
+        """).format(table_name=sql.Identifier(temp_table))
+        db_cursor.execute(delete_nulls_sql)
 
         # Remove duplicates (keeping first occurrence)
-        db_cursor.execute(f"""
-            DELETE FROM {temp_table} a
-            USING {temp_table} b
-            WHERE a.ctid > b.ctid
-            AND COALESCE(a.source_person_id, '') = COALESCE(b.source_person_id, '')
-            AND COALESCE(a.first_name, '') = COALESCE(b.first_name, '')
-            AND COALESCE(a.last_name, '') = COALESCE(b.last_name, '')
-            AND COALESCE(a.birth_date, '') = COALESCE(b.birth_date, '')
-            AND COALESCE(a.social_security_number, '') = COALESCE(b.social_security_number, '')
-        """)
+        delete_dupes_sql = sql.SQL("""
+            DELETE FROM {table_name} a
+                USING {table_name} b
+                WHERE a.ctid > b.ctid
+                AND COALESCE (a.source_person_id, '') = COALESCE (b.source_person_id, '')
+                AND COALESCE (a.first_name, '') = COALESCE (b.first_name, '')
+                AND COALESCE (a.last_name, '') = COALESCE (b.last_name, '')
+                AND COALESCE (a.birth_date, '') = COALESCE (b.birth_date, '')
+                AND COALESCE (a.social_security_number, '') = COALESCE (b.social_security_number, '')
+        """).format(table_name=sql.Identifier(temp_table))
+
+        db_cursor.execute(delete_dupes_sql)
         return True
     except psycopg.ProgrammingError as e:
         logger.error(

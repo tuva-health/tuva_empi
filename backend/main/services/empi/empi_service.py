@@ -38,7 +38,7 @@ from main.models import (
 )
 from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
 from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
-from main.util.record_preprocessor import create_transformation_functions, transform_all_columns, cleanup_records
+from main.util.record_preprocessor import create_transformation_functions, transform_all_columns, remove_invalid_and_dedupe
 
 
 class PartialConfigDict(TypedDict):
@@ -340,20 +340,22 @@ class EMPIService:
                     self.logger.info("Creating temporary table")
                     self._create_raw_temp_table(cursor, temp_table, csv_col_names)
 
-                    # 2: Create all transformation functions
+                    # 2: Check if source_person_id or source is null
+                    # TODO - see if this needs to be handled differently.
+
+                    # 3. Remove invalid rows and dedupe
+                    self.logger.info("Cleaning up invalid records, and deduping")
+                    remove_invalid_and_dedupe(cursor, temp_table)
+
+                    # 4: Create all transformation functions
                     self.logger.info("Creating preprocessing transformations")
                     create_transformation_functions(cursor)
 
-                    # 3. Apply transformations
+                    # 5. Apply transformations
                     self.logger.info("Applying preprocessing transformations")
                     transform_all_columns(cursor, temp_table)
 
-                    # 4. clean up records
-                    self.logger.info("Cleaning up invalid records")
-                    cleanup_records(cursor, temp_table)
-
                     # TODO add as util function in main.util.sql
-
                     # Load data from temporary table into PersonRecordStaging table,
                     # including job_id column
 
@@ -2053,7 +2055,7 @@ class EMPIService:
 
 
     @staticmethod
-    def _create_raw_temp_table(cursor, temp_table: str, columns: list):
+    def _create_raw_temp_table(cursor: CursorWrapper, temp_table: str, columns: list[str]) -> None:
         """Create temporary table with all TEXT columns for raw data loading."""
         column_defs = [f'"{col}" TEXT' for col in columns]
 
