@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import IO, Any, Mapping, NotRequired, Optional, TypedDict, cast
 
+import psycopg
 from django.core.files.uploadedfile import UploadedFile
 from django.db import connection, transaction
 from django.db.backends.utils import CursorWrapper
@@ -50,6 +51,8 @@ class PartialConfigDict(TypedDict):
 class InvalidPersonRecordFileFormat(Exception):
     """File format is invalid when loading person records via a CSV file."""
 
+class PersonRecordImportError(Exception):
+    """Wrapper for Exceptions in PersonRecord import process."""
 
 class DataSourceDict(TypedDict):
     name: str
@@ -336,24 +339,35 @@ class EMPIService:
                     table = PersonRecordStaging._meta.db_table
                     temp_table = table + "_temp"
 
-                    # 1: Create temporary table
+                    # 1. Create temporary table
                     self.logger.info("Creating temporary table")
-                    self._create_raw_temp_table(cursor, temp_table, csv_col_names)
+                    result = self._create_raw_temp_table(cursor, temp_table, csv_col_names, self.logger)
+                    if not result["success"]:
+                        raise PersonRecordImportError(result["error"])
 
-                    # 2: Check if source_person_id or source is null
-                    # TODO - see if this needs to be handled differently.
+                    # 2. Load data into temp table
+                    self.logger.info("Loading data into temporary table")
+                    result = self._load_csv_into_temp_table(cursor, temp_table, source, csv_col_names, self.logger)
+                    if not result["success"]:
+                        raise PersonRecordImportError(result["error"])
 
                     # 3. Remove invalid rows and dedupe
                     self.logger.info("Cleaning up invalid records, and deduping")
-                    remove_invalid_and_dedupe(cursor, temp_table)
+                    result = remove_invalid_and_dedupe(cursor, temp_table)
+                    if not result["success"]:
+                        raise PersonRecordImportError(result["error"])
 
-                    # 4: Create all transformation functions
+                    # 4. Create all transformation functions
                     self.logger.info("Creating preprocessing transformations")
-                    create_transformation_functions(cursor)
+                    result = create_transformation_functions(cursor)
+                    if not result["success"]:
+                        raise PersonRecordImportError(result["error"])
 
                     # 5. Apply transformations
                     self.logger.info("Applying preprocessing transformations")
-                    transform_all_columns(cursor, temp_table)
+                    result = transform_all_columns(cursor, temp_table)
+                    if not result["success"]:
+                        raise PersonRecordImportError(result["error"])
 
                     # TODO add as util function in main.util.sql
                     # Load data from temporary table into PersonRecordStaging table,
@@ -2053,15 +2067,113 @@ class EMPIService:
 
             return estimated_count
 
+    @staticmethod
+    def _create_raw_temp_table(cursor: CursorWrapper, temp_table: str, columns: list[str], logger: logging.Logger) -> dict[str, bool | str]:
+        """Create temporary table with all TEXT columns for raw data loading."""
+
+        if not columns:
+            error_msg = "Cannot create table with no columns"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        try:
+            column_defs = [f'"{col}" TEXT' for col in columns]
+            create_sql = f"""
+                CREATE TEMP TABLE {temp_table} (
+                    {', '.join(column_defs)}
+                )
+            """
+            cursor.execute(create_sql)
+            return {"success": True, "message": f"Table '{temp_table}' created successfully"}
+
+        except psycopg.ProgrammingError as e:
+            if "permission denied" in str(e).lower():
+                error_msg = f"Insufficient permissions to create table '{temp_table}': {e}"
+            else:
+                error_msg = f"SQL syntax or schema error creating table '{temp_table}': {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except psycopg.OperationalError as e:
+            if "disk" in str(e).lower() or "space" in str(e).lower():
+                error_msg = f"Insufficient disk space to create table '{temp_table}': {e}"
+            elif "connection" in str(e).lower():
+                error_msg = f"Database connection lost while creating table '{temp_table}': {e}"
+            else:
+                error_msg = f"Database operational error creating table '{temp_table}': {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except psycopg.DatabaseError as e:
+            error_msg = f"Database error creating table '{temp_table}': {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            error_msg = f"Unexpected error creating table '{temp_table}': {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
 
     @staticmethod
-    def _create_raw_temp_table(cursor: CursorWrapper, temp_table: str, columns: list[str]) -> None:
-        """Create temporary table with all TEXT columns for raw data loading."""
-        column_defs = [f'"{col}" TEXT' for col in columns]
+    def _load_csv_into_temp_table(cursor: CursorWrapper, temp_table: str, source: str | UploadedFile,
+                              columns: list[str], logger: logging.Logger) -> dict[str, bool | str]:
+        """Load CSV data into temporary table."""
+        try:
+            with open_source(source) as f:
+                # Skip header row
+                f.readline()
 
-        create_sql = f"""
-            CREATE TEMP TABLE {temp_table} (
-                {', '.join(column_defs)}
-            )
-        """
-        cursor.execute(create_sql)
+                # Use PostgreSQL COPY for efficient loading
+                copy_sql = sql.SQL("COPY {table} ({columns}) FROM STDIN WITH CSV").format(
+                    table=sql.Identifier(temp_table),
+                    columns=sql.SQL(', ').join(sql.Identifier(col) for col in columns)
+                )
+
+                cursor.copy_expert(copy_sql, f)
+
+                # Get count of loaded records
+                count_sql = sql.SQL("SELECT COUNT(*) FROM {table}").format(
+                    table=sql.Identifier(temp_table)
+                )
+                cursor.execute(count_sql)
+                loaded_count = cursor.fetchone()[0]
+
+                logger.info(f"Loaded {loaded_count:,} records from CSV into {temp_table}")
+
+                return {
+                    "success": True,
+                    "records_loaded": loaded_count
+                }
+        except FileNotFoundError as e:
+            error_msg = f"CSV file not found: {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except PermissionError as e:
+            error_msg = f"Permission denied reading CSV file: {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except UnicodeDecodeError as e:
+            error_msg = f"CSV file encoding error - file may not be UTF-8: {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except psycopg.Error as e:
+            if "connection" in str(e).lower():
+                error_msg = f"Database connection lost during CSV load: {e}"
+            elif "disk" in str(e).lower() or "space" in str(e).lower():
+                error_msg = f"Insufficient disk space during CSV load: {e}"
+            elif "data" in str(e).lower() or "format" in str(e).lower():
+                error_msg = f"CSV data format error - invalid data types or values: {e}"
+            elif "permission" in str(e).lower():
+                error_msg = f"Database permission error during CSV load: {e}"
+            else:
+                error_msg = f"Database error during CSV load: {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        except Exception as e:
+            error_msg = f"Unexpected error loading CSV into temp table '{temp_table}': {e}"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}

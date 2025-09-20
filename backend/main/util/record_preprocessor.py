@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
+def create_transformation_functions(db_cursor: CursorWrapper) -> dict[str, bool | str]:
     """Create all PostgreSQL functions needed for preprocessing transformations."""
     try:
 
@@ -490,33 +490,33 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> bool:
             END;
             $$ LANGUAGE plpgsql IMMUTABLE;
         """)
-        return True
-
+        return {"success": True}
     except psycopg.ProgrammingError as e:
-        logger.error(
-            f"Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: {e}")
-        return False
+        error_msg =  f"Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
     except psycopg.OperationalError as e:
-        logger.error(
-            f"Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: {e}")
-        return False
+        error_msg =  f"Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
     except DatabaseError as e:
-        logger.error(
-            f"Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: {e}")
-        return False
+        error_msg =  f"Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
     except Exception as e:
-        logger.error(
-            f"Failed to create PostgreSQL transformation functions - unexpected error during function creation: {e}")
-        return False
+        error_msg =  f"Failed to create PostgreSQL transformation functions - unexpected error during function creation: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
 
-def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> bool:
+def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> dict[str, bool | str]:
     """Apply all transformations in a single UPDATE statement."""
 
     # Validate first to guard again SQL injection
     # Only allow alphanumeric, underscores
     if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', temp_table):
-        logger.error(f"Invalid table name: {temp_table}")
-        return False
+        error_msg = f"Invalid table name: {temp_table}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
 
     try:
         # TODO - this is currently 1 step. For speed. Do we want more information on where things fail?
@@ -536,43 +536,61 @@ def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> bool:
                 phone = normalize_phone(phone)            
         """).format(table_name=sql.Identifier(temp_table))
         db_cursor.execute(transform_sql)
-        return True
+        return {"success": True}
 
     except psycopg.ProgrammingError as e:
-        logger.error(
-            f"Failed to apply data transformations to table '{temp_table}' - SQL syntax error. Check table structure and transformation function availability: {e}")
-        return False
+        error_msg = f"Failed to apply data transformations to table '{temp_table}' - SQL syntax error: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
     except psycopg.OperationalError as e:
-        logger.error(
-            f"Failed to apply data transformations to table '{temp_table}' - database connection or operational error. Check database connectivity: {e}")
-        return False
+        error_msg = f"Failed to apply data transformations to table '{temp_table}' - database connection or operational error. Check database connectivity: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
     except DatabaseError as e:
-        logger.error(
-            f"Failed to apply data transformations to table '{temp_table}' - database error. Ensure transformation functions exist and table is accessible: {e}")
-        return False
+        error_msg =  f"Failed to apply data transformations to table '{temp_table}' - database error. Ensure transformation functions exist and table is accessible: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
     except Exception as e:
-        logger.error(
-            f"Failed to apply data transformations to table '{temp_table}' - unexpected error during column transformation: {e}")
-        return False
+        error_msg = f"Failed to apply data transformations to table '{temp_table}' - unexpected error during column transformation: {e}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
 
 
-def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> bool:
+
+def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> dict[str, bool | str]:
     """Remove invalid records and duplicates."""
 
     # Validate table name
     if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', temp_table):
-        logger.error(f"Invalid table name: {temp_table}")
-        return False
+        error_msg = f"Invalid table name: {temp_table}"
+        logger.error(error_msg)
+        return {"success": False, "error": error_msg}
 
     try:
         # Remove records with null source_person_id or '' after trimming
-        # Remove records with null source_person_id or '' after trimming
-        delete_nulls_sql = sql.SQL("""
+        delete_source_person_id_nulls_sql = sql.SQL("""
             DELETE FROM {table_name}
             WHERE source_person_id IS NULL
                 OR TRIM (source_person_id) = ''
         """).format(table_name=sql.Identifier(temp_table))
-        db_cursor.execute(delete_nulls_sql)
+        db_cursor.execute(delete_source_person_id_nulls_sql)
+
+        delete_data_source_nulls_sql = sql.SQL("""
+            DELETE FROM {table_name}
+            WHERE data_source IS NULL
+                OR TRIM (data_source) = ''
+        """).format(table_name=sql.Identifier(temp_table))
+        db_cursor.execute(delete_data_source_nulls_sql)
+
+        # Get count after removing nulls
+        count_sql = sql.SQL("SELECT COUNT(*) FROM {table_name}").format(
+            table_name=sql.Identifier(temp_table)
+        )
+        db_cursor.execute(count_sql)
+        current_count = db_cursor.fetchone()[0]
+
+        if current_count == 0:
+            return {"success": False, "error": f"Table '{temp_table}' is empty after removing null source_person_id and data_source. Please check your data."}
 
         # Remove duplicates (keeping first occurrence)
         delete_dupes_sql = sql.SQL("""
@@ -585,22 +603,28 @@ def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> bool
                 AND COALESCE (a.birth_date, '') = COALESCE (b.birth_date, '')
                 AND COALESCE (a.social_security_number, '') = COALESCE (b.social_security_number, '')
         """).format(table_name=sql.Identifier(temp_table))
-
         db_cursor.execute(delete_dupes_sql)
-        return True
+
+        db_cursor.execute(count_sql)
+        final_count = db_cursor.fetchone()[0]
+        return {
+            "success": True,
+            "final_count": final_count,
+        }
+
     except psycopg.ProgrammingError as e:
         logger.error(
             f"Failed to cleanup records from table '{temp_table}' - SQL syntax error. Check table exists and has required columns (source_person_id, first_name, last_name, birth_date, social_security_number): {e}")
-        return False
+        return {"success": False, "error": str(e)}
     except psycopg.OperationalError as e:
         logger.error(
             f"Failed to cleanup records from table '{temp_table}' - database connection or operational error. Check database connectivity and table accessibility: {e}")
-        return False
+        return {"success": False, "error": str(e)}
     except DatabaseError as e:
         logger.error(
             f"Failed to cleanup records from table '{temp_table}' - database error. This may indicate table lock issues or insufficient permissions for DELETE operations: {e}")
-        return False
+        return {"success": False, "error": str(e)}
     except Exception as e:
         logger.error(
             f"Failed to cleanup records from table '{temp_table}' - unexpected error during record deletion and deduplication: {e}")
-        return False
+        return {"success": False, "error": str(e)}
