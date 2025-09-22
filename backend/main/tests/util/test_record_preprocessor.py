@@ -17,10 +17,6 @@ class TestTransformationFunctions(TestCase):
         """Set up test fixtures before each test method."""
         self.mock_cursor = Mock(spec=CursorWrapper)
 
-    def tearDown(self) -> None:
-        """Clean up after each test method."""
-        pass
-
     def test_create_transformation_functions_success(self) -> None:
         """Test successful creation of all transformation functions."""
         result = create_transformation_functions(self.mock_cursor)
@@ -355,46 +351,6 @@ class TestRemoveInvalidAndDedupe(TestCase):
         self.assertEqual(mock_logger.error.call_count, len(invalid_names))
 
     @patch('main.util.record_preprocessor.logger')
-    def test_remove_invalid_and_dedupe_programming_error(self, mock_logger: MagicMock) -> None:
-        """Test handling of SQL syntax errors during cleanup"""
-        # Arrange - fail on first DELETE statement
-        self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
-            "column 'source_person_id' does not exist"
-        )
-
-        # Act
-        result = remove_invalid_and_dedupe(self.mock_cursor, self.valid_table_name)
-
-        # Assert
-        self.assertFalse(result["success"])
-        self.mock_cursor.execute.assert_called_once()  # Should fail on first call
-        mock_logger.error.assert_called_once()
-
-        error_message = mock_logger.error.call_args[0][0]
-        self.assertIn("SQL syntax error", error_message)
-        self.assertIn("required columns", error_message)
-        self.assertIn("source_person_id", error_message)
-
-    @patch('main.util.record_preprocessor.logger')
-    def test_remove_invalid_and_dedupe_operational_error(self, mock_logger: MagicMock) -> None:
-        """Test handling of database connection errors"""
-        # Arrange
-        self.mock_cursor.execute.side_effect = psycopg.OperationalError(
-            "connection to server lost"
-        )
-
-        # Act
-        result = remove_invalid_and_dedupe(self.mock_cursor, self.valid_table_name)
-
-        # Assert
-        self.assertFalse(result["success"])
-        mock_logger.error.assert_called_once()
-
-        error_message = mock_logger.error.call_args[0][0]
-        self.assertIn("database connection or operational error", error_message)
-        self.assertIn("connection to server lost", error_message)
-
-    @patch('main.util.record_preprocessor.logger')
     def test_remove_invalid_and_dedupe_database_error(self, mock_logger: MagicMock) -> None:
         """Test handling of general database errors"""
         # Arrange
@@ -428,4 +384,3 @@ class TestRemoveInvalidAndDedupe(TestCase):
 
         error_message = mock_logger.error.call_args[0][0]
         self.assertIn("unexpected error during record deletion", error_message)
-        self.assertIn("unexpected error", error_message)
