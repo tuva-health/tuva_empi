@@ -2086,26 +2086,8 @@ class EMPIService:
             cursor.execute(create_sql)
             return TableResult(success=True, message=f"Table '{temp_table}' created successfully.")
 
-        except psycopg.ProgrammingError as e:
-            if "permission denied" in str(e).lower():
-                error_msg = f"Insufficient permissions to create table '{temp_table}': {e}"
-            else:
-                error_msg = f"SQL syntax or schema error creating table '{temp_table}': {e}"
-            logger.error(error_msg)
-            return TableResult(success=False, error=error_msg)
-
-        except psycopg.OperationalError as e:
-            if "disk" in str(e).lower() or "space" in str(e).lower():
-                error_msg = f"Insufficient disk space to create table '{temp_table}': {e}"
-            elif "connection" in str(e).lower():
-                error_msg = f"Database connection lost while creating table '{temp_table}': {e}"
-            else:
-                error_msg = f"Database operational error creating table '{temp_table}': {e}"
-            logger.error(error_msg)
-            return TableResult(success=False, error=error_msg)
-
-        except psycopg.DatabaseError as e:
-            error_msg = f"Database error creating table '{temp_table}': {e}"
+        except psycopg.Error as e:
+            error_msg = f"Database error during temp table creation: {e}"
             logger.error(error_msg)
             return TableResult(success=False, error=error_msg)
 

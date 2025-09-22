@@ -91,8 +91,7 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
             $$ LANGUAGE plpgsql IMMUTABLE;
         """)
 
-       # TODO can we fail fast if we turn NULL?
-       # Last Name normalization
+        # Last Name normalization
         db_cursor.execute(r"""
             CREATE OR REPLACE FUNCTION normalize_last_name(name TEXT)
             RETURNS TEXT AS $$
@@ -145,7 +144,7 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
             $$ LANGUAGE plpgsql IMMUTABLE;
         """)
 
-         # Sex normalization 
+        # Sex normalization 
         db_cursor.execute(r"""
             CREATE OR REPLACE FUNCTION normalize_sex(sex_value TEXT)
             RETURNS TEXT AS $$
@@ -156,17 +155,11 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
 
                 -- Convert various representations to standard values
                 sex_value := CASE sex_value
-                    -- Male variations
                     WHEN 'm' THEN 'M'
                     WHEN 'male' THEN 'M'
-                    WHEN '1' THEN 'M'
                     
-                    -- Female variatios  
                     WHEN 'f' THEN 'F'
                     WHEN 'female' THEN 'F'
-                    
-                    -- Unknown/Other variations → convert to NULL
-                    WHEN 'unknown' THEN NULL
                     
                     -- Anything else becomes NULL
                     ELSE NULL
@@ -515,9 +508,8 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
 
 def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> TableResult:
     """Apply all transformations in a single UPDATE statement."""
-
     # Validate first to guard again SQL injection
-    # Only allow alphanumeric, underscores
+    # Only allow alphanumeric, underscoes
     if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', temp_table):
         error_msg = f"Invalid table name: {temp_table}"
         logger.error(error_msg)
@@ -563,7 +555,6 @@ def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> TableRes
 
 def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> TableResult:
     """Remove invalid records and duplicates."""
-
     # Validate table name
     if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$', temp_table):
         error_msg = f"Invalid table name: {temp_table}"
@@ -579,6 +570,7 @@ def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> Tabl
         """).format(table_name=sql.Identifier(temp_table))
         db_cursor.execute(delete_source_person_id_nulls_sql)
 
+        # Remove records with null datasource or '' after trimming
         delete_data_source_nulls_sql = sql.SQL("""
             DELETE FROM {table_name}
             WHERE data_source IS NULL
@@ -609,19 +601,17 @@ def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> Tabl
         """).format(table_name=sql.Identifier(temp_table))
         db_cursor.execute(delete_dupes_sql)
 
+        # get final count
         db_cursor.execute(count_sql)
         final_count = db_cursor.fetchone()[0]
         return TableResult(success=True, message=f"Removed {final_count} records from table '{temp_table}'")
 
-    except psycopg.ProgrammingError as e:
-        logger.error(
-            f"Failed to cleanup records from table '{temp_table}' - SQL syntax error. Check table exists and has required columns (source_person_id, first_name, last_name, birth_date, social_security_number): {e}")
-        return TableResult(success=False, error=str(e))
-    except psycopg.OperationalError as e:
-        logger.error(
-            f"Failed to cleanup records from table '{temp_table}' - database connection or operational error. Check database connectivity and table accessibility: {e}")
-        return TableResult(success=False, error=str(e))
+    except psycopg.Error as e:
+        error_msg = f"Failed to clean up records from table '{temp_table} - {e}"
+        logger.error(error_msg)
+        return TableResult(success=False, error=str(error_msg))
     except DatabaseError as e:
+
         logger.error(
             f"Failed to cleanup records from table '{temp_table}' - database error. This may indicate table lock issues or insufficient permissions for DELETE operations: {e}")
         return TableResult(success=False, error=str(e))
