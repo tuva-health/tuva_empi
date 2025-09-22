@@ -39,7 +39,12 @@ from main.models import (
 )
 from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
 from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
-from main.util.record_preprocessor import create_transformation_functions, transform_all_columns, remove_invalid_and_dedupe, TableResult
+from main.util.record_preprocessor import (
+    create_transformation_functions,
+    transform_all_columns,
+    remove_invalid_and_dedupe,
+    TableResult,
+)
 
 
 class PartialConfigDict(TypedDict):
@@ -51,8 +56,10 @@ class PartialConfigDict(TypedDict):
 class InvalidPersonRecordFileFormat(Exception):
     """File format is invalid when loading person records via a CSV file."""
 
+
 class PersonRecordImportError(Exception):
     """Wrapper for Exceptions in PersonRecord import process."""
+
 
 class DataSourceDict(TypedDict):
     name: str
@@ -341,13 +348,22 @@ class EMPIService:
 
                     # 1. Create temporary table
                     self.logger.info("Creating temporary table")
-                    result = self._create_raw_temp_table(cursor, temp_table, csv_col_names, self.logger)
+                    result = self._create_raw_temp_table(
+                        cursor, temp_table, csv_col_names, self.logger
+                    )
                     if not result["success"]:
                         raise PersonRecordImportError(result["error"])
 
                     # 2. Load data into temp table
                     self.logger.info("Loading data into temporary table")
-                    result = self._load_csv_into_temp_table(cursor, temp_table, source, csv_col_names, self.logger, config_id)
+                    result = self._load_csv_into_temp_table(
+                        cursor,
+                        temp_table,
+                        source,
+                        csv_col_names,
+                        self.logger,
+                        config_id,
+                    )
                     if not result["success"]:
                         raise InvalidPersonRecordFileFormat(result["error"])
 
@@ -2068,7 +2084,12 @@ class EMPIService:
             return estimated_count
 
     @staticmethod
-    def _create_raw_temp_table(cursor: CursorWrapper, temp_table: str, columns: list[str], logger: logging.Logger) -> TableResult:
+    def _create_raw_temp_table(
+        cursor: CursorWrapper,
+        temp_table: str,
+        columns: list[str],
+        logger: logging.Logger,
+    ) -> TableResult:
         """Create temporary table with all TEXT columns for raw data loading."""
 
         if not columns:
@@ -2084,7 +2105,9 @@ class EMPIService:
                 )
             """
             cursor.execute(create_sql)
-            return TableResult(success=True, message=f"Table '{temp_table}' created successfully.")
+            return TableResult(
+                success=True, message=f"Table '{temp_table}' created successfully."
+            )
 
         except psycopg.Error as e:
             error_msg = f"Database error during temp table creation: {e}"
@@ -2097,14 +2120,22 @@ class EMPIService:
             return TableResult(success=False, error=error_msg)
 
     @staticmethod
-    def _load_csv_into_temp_table(cursor: CursorWrapper, temp_table: str, source: str | UploadedFile,
-                              columns: list[str], logger: logging.Logger, job_id: int) -> TableResult:
+    def _load_csv_into_temp_table(
+        cursor: CursorWrapper,
+        temp_table: str,
+        source: str | UploadedFile,
+        columns: list[str],
+        logger: logging.Logger,
+        job_id: int,
+    ) -> TableResult:
         """Load CSV data into temporary table."""
         try:
             # Use PostgreSQL COPY for efficient loading
-            copy_sql = sql.SQL("COPY {table} ({columns}) FROM STDIN WITH (FORMAT CSV, DELIMITER ',', HEADER)").format(
+            copy_sql = sql.SQL(
+                "COPY {table} ({columns}) FROM STDIN WITH (FORMAT CSV, DELIMITER ',', HEADER)"
+            ).format(
                 table=sql.Identifier(temp_table),
-                columns=sql.SQL(', ').join(sql.Identifier(col) for col in columns)
+                columns=sql.SQL(", ").join(sql.Identifier(col) for col in columns),
             )
 
             # Load data using chunked streaming approach like import_person_records
@@ -2120,8 +2151,9 @@ class EMPIService:
             loaded_count = cursor.fetchone()[0]
 
             logger.info(f"Loaded {loaded_count:,} records from CSV into {temp_table}")
-            return TableResult(success=True, message=loaded_count)  # Return count as integer
-
+            return TableResult(
+                success=True, message=loaded_count
+            )  # Return count as integer
 
         except FileNotFoundError as e:
             error_msg = f"CSV file not found: {e}"
@@ -2144,6 +2176,8 @@ class EMPIService:
             return TableResult(success=False, error=error_msg)
 
         except Exception as e:
-            error_msg = f"Unexpected error loading CSV into temp table '{temp_table}': {e}"
+            error_msg = (
+                f"Unexpected error loading CSV into temp table '{temp_table}': {e}"
+            )
             logger.error(error_msg)
             return TableResult(success=False, error=error_msg)

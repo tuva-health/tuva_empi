@@ -7,8 +7,9 @@ from django.db.backends.utils import CursorWrapper
 from main.util.record_preprocessor import (
     create_transformation_functions,
     transform_all_columns,
-    remove_invalid_and_dedupe
+    remove_invalid_and_dedupe,
 )
+
 
 class TestTransformationFunctions(TestCase):
     """Test the PostgreSQL transformation function creation."""
@@ -32,11 +33,15 @@ class TestTransformationFunctions(TestCase):
         first_call = str(calls[0][0][0])  # First call's first argument
         self.assertIn("CREATE OR REPLACE FUNCTION normalize_first_name", first_call)
 
-    @patch('main.util.record_preprocessor.logger') 
-    def test_create_transformation_functions_programming_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_create_transformation_functions_programming_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of SQL syntax errors during function creation."""
         # Arrange: mock execute to raise ProgrammingError
-        self.mock_cursor.execute.side_effect = psycopg.ProgrammingError("syntax error at or near 'FUNCTION'")
+        self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
+            "syntax error at or near 'FUNCTION'"
+        )
 
         # Act
         result = create_transformation_functions(self.mock_cursor)
@@ -45,13 +50,20 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert error_message == "Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: syntax error at or near 'FUNCTION'"
+        assert (
+            error_message
+            == "Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: syntax error at or near 'FUNCTION'"
+        )
 
-    @patch('main.util.record_preprocessor.logger') 
-    def test_create_transformation_functions_operational_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_create_transformation_functions_operational_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of database connection errors."""
         # Arrange: mock execute to raise OperationalError
-        self.mock_cursor.execute.side_effect = psycopg.OperationalError("connection to server lost")
+        self.mock_cursor.execute.side_effect = psycopg.OperationalError(
+            "connection to server lost"
+        )
 
         # Act
         result = create_transformation_functions(self.mock_cursor)
@@ -60,10 +72,15 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert error_message == "Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: connection to server lost"
+        assert (
+            error_message
+            == "Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: connection to server lost"
+        )
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_create_transformation_functions_database_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_create_transformation_functions_database_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of general database errors."""
         # Arrange: mock execute to raise DatabaseError
         self.mock_cursor.execute.side_effect = DatabaseError("insufficient privileges")
@@ -75,10 +92,15 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert error_message == "Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: insufficient privileges"
+        assert (
+            error_message
+            == "Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: insufficient privileges"
+        )
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_create_transformation_functions_unexpected_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_create_transformation_functions_unexpected_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of unexpected errors."""
         # Arrange: mock execute to raise unexpected exception
         self.mock_cursor.execute.side_effect = ValueError("unexpected error")
@@ -90,13 +112,16 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert error_message == "Failed to create PostgreSQL transformation functions - unexpected error during function creation: unexpected error"
+        assert (
+            error_message
+            == "Failed to create PostgreSQL transformation functions - unexpected error during function creation: unexpected error"
+        )
 
 
 class TestTransformAllColumns(TestCase):
     """Test the main transformation function"""
 
-    def setUp(self) ->None:
+    def setUp(self) -> None:
         self.mock_cursor = Mock(spec=CursorWrapper)
         self.valid_table_name = "test_table_123"
         self.invalid_table_name = "test-table!"
@@ -128,7 +153,7 @@ class TestTransformAllColumns(TestCase):
             "city = normalize_city(city)",
             "state = normalize_state(state)",
             "zip_code = normalize_zip(zip_code)",
-            "phone = normalize_phone(phone)"
+            "phone = normalize_phone(phone)",
         ]
 
         for transformation in expected_transformations:
@@ -151,8 +176,10 @@ class TestTransformAllColumns(TestCase):
                 result = transform_all_columns(self.mock_cursor, table_name)
                 self.assertTrue(result, f"Valid table name '{table_name}' was rejected")
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_transform_all_columns_invalid_table_names(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_transform_all_columns_invalid_table_names(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test that invalid table names are rejected"""
         invalid_names = [
             "test-table",  # Contains hyphen
@@ -167,13 +194,17 @@ class TestTransformAllColumns(TestCase):
         for table_name in invalid_names:
             with self.subTest(table_name=table_name):
                 result = transform_all_columns(self.mock_cursor, table_name)
-                self.assertFalse(result["success"], f"Invalid table name '{table_name}' was accepted")
+                self.assertFalse(
+                    result["success"], f"Invalid table name '{table_name}' was accepted"
+                )
 
         # Should never call execute for invalid names
         self.mock_cursor.execute.assert_not_called()
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_transform_all_columns_programming_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_transform_all_columns_programming_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of SQL syntax errors during transformation"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
@@ -192,8 +223,10 @@ class TestTransformAllColumns(TestCase):
         self.assertIn("SQL syntax error", error_message)
         self.assertIn(self.valid_table_name, error_message)
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_transform_all_columns_operational_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_transform_all_columns_operational_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of database connection errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.OperationalError(
@@ -211,7 +244,7 @@ class TestTransformAllColumns(TestCase):
         self.assertIn("database connection or operational error", error_message)
         self.assertIn("Check database connectivity", error_message)
 
-    @patch('main.util.record_preprocessor.logger')
+    @patch("main.util.record_preprocessor.logger")
     def test_transform_all_columns_database_error(self, mock_logger: MagicMock) -> None:
         """Test handling of general database errors"""
         # Arrange
@@ -228,10 +261,14 @@ class TestTransformAllColumns(TestCase):
 
         error_message = mock_logger.error.call_args[0][0]
         self.assertIn("database error", error_message)
-        self.assertIn("transformation functions exist and table is accessible", error_message)
+        self.assertIn(
+            "transformation functions exist and table is accessible", error_message
+        )
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_transform_all_columns_unexpected_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_transform_all_columns_unexpected_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of unexpected errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = RuntimeError("unexpected runtime error")
@@ -262,7 +299,7 @@ class TestRemoveInvalidAndDedupe(TestCase):
         self.mock_cursor.execute.return_value = None
         self.mock_cursor.fetchone.side_effect = [
             [1000],  # Initial count
-            [975]  # Final count
+            [975],  # Final count
         ]
         # Act
         result = remove_invalid_and_dedupe(self.mock_cursor, self.valid_table_name)
@@ -272,8 +309,10 @@ class TestRemoveInvalidAndDedupe(TestCase):
         # 3 calls for deletion and dedupe, and 2 are for the counts
         self.assertEqual(self.mock_cursor.execute.call_count, 5)
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_remove_invalid_and_dedupe_invalid_table_names(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_remove_invalid_and_dedupe_invalid_table_names(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test that invalid table names are rejected"""
         invalid_names = [
             "test-table",
@@ -283,13 +322,15 @@ class TestRemoveInvalidAndDedupe(TestCase):
             "",
             "a" * 64,  # Too long
             "table;DROP TABLE x;",
-            "table'name"
+            "table'name",
         ]
 
         for table_name in invalid_names:
             with self.subTest(table_name=table_name):
                 result = remove_invalid_and_dedupe(self.mock_cursor, table_name)
-                self.assertFalse(result["success"], f"Invalid table name '{table_name}' was accepted")
+                self.assertFalse(
+                    result["success"], f"Invalid table name '{table_name}' was accepted"
+                )
 
         # Should never execute for invalid names
         self.mock_cursor.execute.assert_not_called()
@@ -297,8 +338,10 @@ class TestRemoveInvalidAndDedupe(TestCase):
         # Should log error for each invalid name
         self.assertEqual(mock_logger.error.call_count, len(invalid_names))
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_remove_invalid_and_dedupe_database_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_remove_invalid_and_dedupe_database_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of general database errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = DatabaseError(
@@ -316,8 +359,10 @@ class TestRemoveInvalidAndDedupe(TestCase):
         self.assertIn("database error", error_message)
         self.assertIn("insufficient permissions for DELETE operations", error_message)
 
-    @patch('main.util.record_preprocessor.logger')
-    def test_remove_invalid_and_dedupe_unexpected_error(self, mock_logger: MagicMock) -> None:
+    @patch("main.util.record_preprocessor.logger")
+    def test_remove_invalid_and_dedupe_unexpected_error(
+        self, mock_logger: MagicMock
+    ) -> None:
         """Test handling of unexpected errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = ValueError("unexpected error")
