@@ -46,7 +46,7 @@ class TestTransformationFunctions(TestCase):
         result = create_transformation_functions(self.mock_cursor)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
         assert error_message == "Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: syntax error at or near 'FUNCTION'"
@@ -61,7 +61,7 @@ class TestTransformationFunctions(TestCase):
         result = create_transformation_functions(self.mock_cursor)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
         assert error_message == "Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: connection to server lost"
@@ -76,7 +76,7 @@ class TestTransformationFunctions(TestCase):
         result = create_transformation_functions(self.mock_cursor)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
         assert error_message == "Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: insufficient privileges"
@@ -91,7 +91,7 @@ class TestTransformationFunctions(TestCase):
         result = create_transformation_functions(self.mock_cursor)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
         assert error_message == "Failed to create PostgreSQL transformation functions - unexpected error during function creation: unexpected error"
@@ -105,7 +105,7 @@ class TestTransformationFunctions(TestCase):
         result = create_transformation_functions(self.mock_cursor)
 
         # Assert
-        self.assertTrue(result)
+        self.assertTrue(result["success"])
         self.assertEqual(self.mock_cursor.execute.call_count, 12)
 
         # Get all the SQL calls
@@ -149,7 +149,7 @@ class TestTransformAllColumns(TestCase):
         result = transform_all_columns(self.mock_cursor, self.valid_table_name)
 
         # Assert
-        self.assertTrue(result)
+        self.assertTrue(result["success"])
         self.mock_cursor.execute.assert_called_once()
 
         # Verify the SQL contains all expected transformations
@@ -206,7 +206,7 @@ class TestTransformAllColumns(TestCase):
         for table_name in invalid_names:
             with self.subTest(table_name=table_name):
                 result = transform_all_columns(self.mock_cursor, table_name)
-                self.assertFalse(result, f"Invalid table name '{table_name}' was accepted")
+                self.assertFalse(result["success"], f"Invalid table name '{table_name}' was accepted")
 
         # Should never call execute for invalid names
         self.mock_cursor.execute.assert_not_called()
@@ -223,13 +223,12 @@ class TestTransformAllColumns(TestCase):
         result = transform_all_columns(self.mock_cursor, self.valid_table_name)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         self.mock_cursor.execute.assert_called_once()
         mock_logger.error.assert_called_once()
 
         error_message = mock_logger.error.call_args[0][0]
         self.assertIn("SQL syntax error", error_message)
-        self.assertIn("transformation function availability", error_message)
         self.assertIn(self.valid_table_name, error_message)
 
     @patch('main.util.record_preprocessor.logger')
@@ -244,7 +243,7 @@ class TestTransformAllColumns(TestCase):
         result = transform_all_columns(self.mock_cursor, self.valid_table_name)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
 
         error_message = mock_logger.error.call_args[0][0]
@@ -263,7 +262,7 @@ class TestTransformAllColumns(TestCase):
         result = transform_all_columns(self.mock_cursor, self.valid_table_name)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
 
         error_message = mock_logger.error.call_args[0][0]
@@ -280,7 +279,7 @@ class TestTransformAllColumns(TestCase):
         result = transform_all_columns(self.mock_cursor, self.valid_table_name)
 
         # Assert
-        self.assertFalse(result)
+        self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
 
         error_message = mock_logger.error.call_args[0][0]

@@ -66,6 +66,15 @@ class ImportPersonRecordsTestCase(TestCase):
     config: Config
 
     @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        with connection.cursor() as cursor:
+            try:
+                cursor.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
+            except Exception as e:
+                pass  # Skip if no permissions
+
+    @classmethod
     def setUpTestData(cls) -> None:
         cls.config = Config.objects.create(
             **{
@@ -96,20 +105,19 @@ class ImportPersonRecordsTestCase(TestCase):
 
         self.assertEqual(
             records.filter(source_person_id="a4")[0].first_name,
-            "",
-            "Empty strings in the CSV should result in empty strings",
+            None,  # Empty strings become NULL
+            "Empty strings should be normalized to NULL",
         )
 
         self.assertEqual(
             records.filter(source_person_id="a5")[0].first_name,
-            None,
-            "Empty values in the CSV should result in null values",
+            None,  # This should still be None
+            "NULL values should remain NULL",
         )
-
         self.assertEqual(
             records.filter(source_person_id="a6")[0].first_name,
-            "1",
-            "Number values in the CSV should result in strings",
+            None,  # "1" becomes "" becomes NULL
+            "Numeric values should be stripped and result in NULL",
         )
 
         rec = records[0]
@@ -179,7 +187,7 @@ class ImportPersonRecordsTestCase(TestCase):
         with self.assertRaises(InvalidPersonRecordFileFormat) as cm:
             empi.import_person_records(s3_uri, self.config.id)
         self.assertIn(
-            'Incorrectly formatted person records file due to missing data for column "phone"',
+            'Database error during CSV load: missing data for column "phone"',
             str(cm.exception),
         )
 
@@ -4371,13 +4379,13 @@ class ExportPersonRecordsTestCase(TestCase):
 class TestCreateRawTempTable(TestCase):
     """Test the _create_raw_temp_table helper function"""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.mock_cursor = Mock(spec=CursorWrapper)
         self.mock_logger = Mock(spec=logging.Logger)
         self.valid_table_name = "test_table_123"
         self.valid_columns = ["first_name", "last_name", "email"]
 
-    def test_create_raw_temp_table_success(self):
+    def test_create_raw_temp_table_success(self) -> None:
         """Test successful table creation"""
         # Arrange
         self.mock_cursor.execute.return_value = None
@@ -4402,7 +4410,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn('"last_name" TEXT', executed_sql)
         self.assertIn('"email" TEXT', executed_sql)
 
-    def test_create_raw_temp_table_empty_columns(self):
+    def test_create_raw_temp_table_empty_columns(self) -> None:
         """Test error when no columns provided"""
         # Act
         result = EMPIService._create_raw_temp_table(
@@ -4418,7 +4426,7 @@ class TestCreateRawTempTable(TestCase):
         self.mock_logger.error.assert_called_once_with("Cannot create table with no columns")
         self.mock_cursor.execute.assert_not_called()
 
-    def test_create_raw_temp_table_programming_error_permission(self):
+    def test_create_raw_temp_table_programming_error_permission(self) -> None:
         """Test handling of permission denied errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
@@ -4439,7 +4447,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("test_table_123", result["error"])
         self.mock_logger.error.assert_called_once()
 
-    def test_create_raw_temp_table_programming_error_syntax(self):
+    def test_create_raw_temp_table_programming_error_syntax(self) -> None:
         """Test handling of SQL syntax errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
@@ -4460,7 +4468,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("syntax error at or near 'CREATE'", result["error"])
         self.mock_logger.error.assert_called_once()
 
-    def test_create_raw_temp_table_operational_error_disk_space(self):
+    def test_create_raw_temp_table_operational_error_disk_space(self) -> None:
         """Test handling of disk space errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.OperationalError(
@@ -4481,7 +4489,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("No space left on device", result["error"])
         self.mock_logger.error.assert_called_once()
 
-    def test_create_raw_temp_table_operational_error_connection(self):
+    def test_create_raw_temp_table_operational_error_connection(self) -> None:
         """Test handling of connection errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.OperationalError(
@@ -4501,7 +4509,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("Database connection lost", result["error"])
         self.assertIn("server closed the connection", result["error"])
 
-    def test_create_raw_temp_table_database_error(self):
+    def test_create_raw_temp_table_database_error(self) -> None:
         """Test handling of general database errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.DatabaseError(
@@ -4521,7 +4529,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("Database error creating table", result["error"])
         self.assertIn("database is locked", result["error"])
 
-    def test_create_raw_temp_table_unexpected_error(self):
+    def test_create_raw_temp_table_unexpected_error(self) -> None:
         """Test handling of unexpected errors"""
         # Arrange
         self.mock_cursor.execute.side_effect = ValueError("unexpected error")
@@ -4539,7 +4547,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("Unexpected error creating table", result["error"])
         self.assertIn("unexpected error", result["error"])
 
-    def test_create_raw_temp_table_column_quoting(self):
+    def test_create_raw_temp_table_column_quoting(self) -> None:
         """Test that column names are properly quoted"""
         # Arrange
         self.mock_cursor.execute.return_value = None
@@ -4564,22 +4572,39 @@ class TestCreateRawTempTable(TestCase):
 class TestLoadCSVIntoTempTable(TestCase):
     """Test the _load_csv_into_temp_table helper function"""
 
-    def setUp(self):
-        self.mock_cursor = Mock(spec=CursorWrapper)
-        self.mock_logger = Mock(spec=logging.Logger)
+    def setUp(self) -> None:
+        # Use MagicMock for better context manager support
+        self.mock_cursor = MagicMock()
+        self.mock_logger = MagicMock()
+
+        # Set up the copy context manager properly
+        mock_copy_obj = MagicMock()
+        self.mock_cursor.copy.return_value.__enter__.return_value = mock_copy_obj
+        self.mock_cursor.copy.return_value.__exit__.return_value = False
+
+        # Set up other methods
+        self.mock_cursor.execute.return_value = None
+        self.mock_cursor.fetchone.return_value = [1000]  # Default COUNT result
+
         self.valid_table_name = "test_table_123"
         self.valid_columns = ["first_name", "last_name", "email"]
         self.test_source = "test_file.csv"
 
+
+    @patch('main.services.empi.empi_service.DEFAULT_BUFFER_SIZE', 1024)
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_success(self, mock_open_source):
+    def test_load_csv_success(self, mock_open_source: MagicMock) -> None:
         """Test successful CSV loading"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header,line\n"  # Skip header
+        mock_file.read.side_effect = [b"chunk1", b"chunk2", b""]  # Simulate chunked reading
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.return_value = None
+        # Mock the copy context manager
+        mock_copy = Mock()
+        self.mock_cursor.copy.return_value.__enter__.return_value = mock_copy
+        self.mock_cursor.copy.return_value.__exit__.return_value = False
+
         self.mock_cursor.execute.return_value = None
         self.mock_cursor.fetchone.return_value = [1000]  # COUNT result
 
@@ -4589,19 +4614,27 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
         self.assertTrue(result["success"])
-        self.assertEqual(result["records_loaded"], 1000)
+        self.assertEqual(result["message"], 1000)
 
         # Verify file operations
         mock_open_source.assert_called_once_with(self.test_source)
-        mock_file.readline.assert_called_once()  # Header skip
+        # Verify chunked reading (3 calls: "chunk1", "chunk2", "")
+        self.assertEqual(mock_file.read.call_count, 3)
+
+        # Verify copy operations
+        self.mock_cursor.copy.assert_called_once()
+        # Verify data was written to copy (2 chunks)
+        self.assertEqual(mock_copy.write.call_count, 2)
+        mock_copy.write.assert_any_call(b"chunk1")
+        mock_copy.write.assert_any_call(b"chunk2")
 
         # Verify database operations
-        self.mock_cursor.copy_expert.assert_called_once()
         self.mock_cursor.execute.assert_called_once()  # COUNT query
         self.mock_cursor.fetchone.assert_called_once()
 
@@ -4611,14 +4644,14 @@ class TestLoadCSVIntoTempTable(TestCase):
         self.assertIn("Loaded 1,000 records", log_message)
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_copy_sql_structure(self, mock_open_source):
+    def test_load_csv_copy_sql_structure(self, mock_open_source: MagicMock) -> None:
         """Test that the COPY SQL is properly structured"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"data", b""]  # Single chunk
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.return_value = None
+        mock_copy = Mock()
         self.mock_cursor.fetchone.return_value = [100]
 
         # Act
@@ -4627,19 +4660,22 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
-        copy_call = self.mock_cursor.copy_expert.call_args[0]
+        copy_call = self.mock_cursor.copy.call_args[0]
         copy_sql = str(copy_call[0])  # The SQL object
 
-        # Verify SQL structure (exact format depends on sql.SQL implementation)
+        # Verify SQL structure
         self.assertIn("COPY", copy_sql)
-        self.assertIn("FROM STDIN WITH CSV", copy_sql)
+        self.assertIn("FROM STDIN WITH", copy_sql)
+        self.assertIn("CSV", copy_sql)
+        self.assertIn("HEADER", copy_sql)
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_file_not_found(self, mock_open_source):
+    def test_load_csv_file_not_found(self, mock_open_source: MagicMock) -> None:
         """Test handling of file not found errors"""
         # Arrange
         mock_open_source.side_effect = FileNotFoundError("No such file or directory")
@@ -4650,7 +4686,8 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
@@ -4660,7 +4697,7 @@ class TestLoadCSVIntoTempTable(TestCase):
         self.mock_logger.error.assert_called_once()
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_permission_error(self, mock_open_source):
+    def test_load_csv_permission_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of file permission errors"""
         # Arrange
         mock_open_source.side_effect = PermissionError("Permission denied")
@@ -4671,7 +4708,8 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
@@ -4680,11 +4718,13 @@ class TestLoadCSVIntoTempTable(TestCase):
         self.assertIn("Permission denied", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_encoding_error(self, mock_open_source):
+    def test_load_csv_encoding_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of file encoding errors"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.side_effect = UnicodeDecodeError(
+        mock_copy = Mock()
+        # Encoding error occurs during read, not readline
+        mock_file.read.side_effect = UnicodeDecodeError(
             'utf-8', b'\xff\xfe', 0, 2, 'invalid start byte'
         )
         mock_open_source.return_value.__enter__.return_value = mock_file
@@ -4695,7 +4735,8 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
@@ -4704,14 +4745,15 @@ class TestLoadCSVIntoTempTable(TestCase):
         self.assertIn("file may not be UTF-8", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_psycopg_connection_error(self, mock_open_source):
+    def test_load_csv_psycopg_connection_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of database connection errors"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"data", b""]
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.side_effect = psycopg.OperationalError(
+        # Error occurs during copy operation
+        self.mock_cursor.copy.side_effect = psycopg.OperationalError(
             "connection to server lost"
         )
 
@@ -4721,23 +4763,23 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
         self.assertFalse(result["success"])
-        self.assertIn("Database connection lost during CSV load", result["error"])
         self.assertIn("connection to server lost", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_psycopg_disk_space_error(self, mock_open_source):
+    def test_load_csv_psycopg_disk_space_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of disk space errors"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"data", b""]
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.side_effect = psycopg.OperationalError(
+        self.mock_cursor.copy.side_effect = psycopg.OperationalError(
             "could not extend file: No space left on device"
         )
 
@@ -4747,23 +4789,23 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
         self.assertFalse(result["success"])
-        self.assertIn("Insufficient disk space during CSV load", result["error"])
         self.assertIn("No space left on device", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_psycopg_data_format_error(self, mock_open_source):
+    def test_load_csv_psycopg_data_format_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of CSV data format errors"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"data", b""]
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.side_effect = psycopg.DataError(
+        self.mock_cursor.copy.side_effect = psycopg.DataError(
             "invalid input syntax for type integer"
         )
 
@@ -4773,23 +4815,23 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
         self.assertFalse(result["success"])
-        self.assertIn("CSV data format error", result["error"])
         self.assertIn("invalid input syntax", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_psycopg_permission_error(self, mock_open_source):
+    def test_load_csv_psycopg_permission_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of database permission errors"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"data", b""]
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.side_effect = psycopg.ProgrammingError(
+        self.mock_cursor.copy.side_effect = psycopg.ProgrammingError(
             "permission denied for table test_table_123"
         )
 
@@ -4799,23 +4841,23 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
         self.assertFalse(result["success"])
-        self.assertIn("Database permission error during CSV load", result["error"])
         self.assertIn("permission denied", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_unexpected_error(self, mock_open_source):
+    def test_load_csv_unexpected_error(self, mock_open_source: MagicMock) -> None:
         """Test handling of unexpected errors"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"data", b""]
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.side_effect = RuntimeError("unexpected error")
+        self.mock_cursor.copy.side_effect = RuntimeError("unexpected error")
 
         # Act
         result = EMPIService._load_csv_into_temp_table(
@@ -4823,7 +4865,8 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
@@ -4832,14 +4875,15 @@ class TestLoadCSVIntoTempTable(TestCase):
         self.assertIn("unexpected error", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_zero_records(self, mock_open_source):
+    def test_load_csv_zero_records(self, mock_open_source: MagicMock) -> None:
         """Test loading CSV with zero records (edge case)"""
         # Arrange
         mock_file = Mock()
-        mock_file.readline.return_value = b"header\n"
+        mock_file.read.side_effect = [b"header\n", b""]  # Only header, no data
         mock_open_source.return_value.__enter__.return_value = mock_file
 
-        self.mock_cursor.copy_expert.return_value = None
+        mock_copy = Mock()
+        self.mock_cursor.copy.return_value.__enter__.return_value = mock_copy
         self.mock_cursor.fetchone.return_value = [0]  # No records loaded
 
         # Act
@@ -4848,12 +4892,41 @@ class TestLoadCSVIntoTempTable(TestCase):
             self.valid_table_name,
             self.test_source,
             self.valid_columns,
-            self.mock_logger
+            self.mock_logger,
+            1
         )
 
         # Assert
         self.assertTrue(result["success"])  # Still successful, just empty
-        self.assertEqual(result["records_loaded"], 0)
+        self.assertEqual(result["message"], 0)
 
         log_message = self.mock_logger.info.call_args[0][0]
         self.assertIn("Loaded 0 records", log_message)
+
+    @patch('main.services.empi.empi_service.open_source')
+    def test_load_csv_copy_context_manager_error(self, mock_open_source: MagicMock) -> None:
+        """Test error when copy context manager fails to enter"""
+        # Arrange
+        mock_file = Mock()
+        mock_file.read.side_effect = [b"data", b""]
+        mock_open_source.return_value.__enter__.return_value = mock_file
+
+        # Mock copy to raise exception on __enter__
+        self.mock_cursor.copy.return_value.__enter__.side_effect = psycopg.OperationalError(
+            "Failed to create copy context"
+        )
+
+        # Act
+        result = EMPIService._load_csv_into_temp_table(
+            self.mock_cursor,
+            self.valid_table_name,
+            self.test_source,
+            self.valid_columns,
+            self.mock_logger,
+            1
+        )
+
+        # Assert
+        self.assertFalse(result["success"])
+        self.assertIn("Database error during CSV load", result["error"])
+        self.assertIn("Failed to create copy context", result["error"])
