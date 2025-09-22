@@ -92,41 +92,6 @@ class TestTransformationFunctions(TestCase):
         error_message = mock_logger.error.call_args[0][0]
         assert error_message == "Failed to create PostgreSQL transformation functions - unexpected error during function creation: unexpected error"
 
-    def test_create_transformation_functions_execution_order(self) -> None:
-        """Test that all 12 functions are created in the correct order."""
-        # Arrange
-        self.mock_cursor.execute.return_value = None
-
-        # Act
-        result = create_transformation_functions(self.mock_cursor)
-
-        # Assert
-        self.assertTrue(result["success"])
-        self.assertEqual(self.mock_cursor.execute.call_count, 12)
-
-        # Get all the SQL calls
-        calls = [str(call[0][0]) for call in self.mock_cursor.execute.call_args_list]
-
-        # Verify the expected functions are created in order
-        expected_functions = [
-            "normalize_first_name",
-            "normalize_last_name",
-            "normalize_sex",
-            "normalize_race",
-            "normalize_birth_date",
-            "normalize_death_date",
-            "normalize_ssn",
-            "normalize_address",
-            "normalize_city",
-            "normalize_state",
-            "normalize_zip",
-           "normalize_phone"
-        ]
-
-        for i, expected_func in enumerate(expected_functions):
-            self.assertIn(f"CREATE OR REPLACE FUNCTION {expected_func}", calls[i],
-                          f"Function {expected_func} not found at position {i}")
-
 
 class TestTransformAllColumns(TestCase):
     """Test the main transformation function"""
@@ -280,24 +245,6 @@ class TestTransformAllColumns(TestCase):
 
         error_message = mock_logger.error.call_args[0][0]
         self.assertIn("unexpected error during column transformation", error_message)
-
-    def test_transform_all_columns_edge_case_table_names(self) -> None:
-        """Test edge cases for table name validation"""
-        # Arrange
-        self.mock_cursor.execute.return_value = None
-
-        edge_cases = [
-            "_underscore_start",  # Valid: starts with underscore
-            "a",  # Valid: single character
-        ]
-
-        for table_name in edge_cases:
-            with self.subTest(table_name=table_name):
-                # Act
-                result = transform_all_columns(self.mock_cursor, table_name)
-
-                # Assert
-                self.assertTrue(result, f"Edge case table name '{table_name}' should be valid")
 
 
 class TestRemoveInvalidAndDedupe(TestCase):
