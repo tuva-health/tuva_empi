@@ -13,7 +13,7 @@ from django.db import connection, transaction
 from django.db.backends.utils import CursorWrapper
 from django.db.models import F, Field
 from django.utils import timezone
-from psycopg import sql
+from psycopg import sql, cursor
 from psycopg.errors import DataError, IntegrityError
 
 from main.models import (
@@ -256,6 +256,7 @@ class EMPIService:
             if job.source_uri is None:
                 raise ValueError("Job source_uri cannot be None for export jobs")
 
+            # TODO - check if this is a memory heavey thing?
             self.export_potential_matches(
                 sink=job.source_uri,
                 estimated_count=estimated_count,  # Pass the already calculated count
@@ -561,6 +562,10 @@ class EMPIService:
             match_group_id: ID of the match group
             fields: Comma-separated list of fields to include (default: essential fields only)
         """
+
+
+        # PROBLEM - PERSONS DICT can be really really big. can we make this a generator function?
+        #
         match_group_table = MatchGroup._meta.db_table
         splink_result_table = SplinkResult._meta.db_table
         person_record_table = PersonRecord._meta.db_table
@@ -797,6 +802,7 @@ class EMPIService:
                 records=records,
             )
 
+        # TODO - see if this can be problematic
         persons = []
         processed_count = 0
         batch_size = 1000
@@ -1643,6 +1649,7 @@ class EMPIService:
 
             persons = []
 
+            # any
             if cursor.rowcount > 0:
                 column_names = [c.name for c in cursor.description]
                 persons = [
@@ -1844,6 +1851,8 @@ class EMPIService:
                     writer.writerow(headers)
 
                     # Dynamic chunk sizing based on dataset size
+                    # this is a dynamically set chunk size.
+                        # are we still seeing it?
                     if estimated_count > 1000000:
                         chunk_size = 10000  # Larger chunks for very large datasets
                         self.logger.info(
