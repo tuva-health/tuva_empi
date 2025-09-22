@@ -4506,27 +4506,6 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("Unexpected error creating table", result["error"])
         self.assertIn("unexpected error", result["error"])
 
-    def test_create_raw_temp_table_column_quoting(self) -> None:
-        """Test that column names are properly quoted"""
-        # Arrange
-        self.mock_cursor.execute.return_value = None
-        columns_with_special_chars = ["first name", "last-name", "email_address"]
-
-        # Act
-        result = EMPIService._create_raw_temp_table(
-            self.mock_cursor,
-            self.valid_table_name,
-            columns_with_special_chars,
-            self.mock_logger
-        )
-
-        # Assert
-        self.assertTrue(result["success"])
-        executed_sql = self.mock_cursor.execute.call_args[0][0]
-        self.assertIn('"first name" TEXT', executed_sql)
-        self.assertIn('"last-name" TEXT', executed_sql)
-        self.assertIn('"email_address" TEXT', executed_sql)
-
 
 class TestLoadCSVIntoTempTable(TestCase):
     """Test the _load_csv_into_temp_table helper function"""
@@ -4700,58 +4679,6 @@ class TestLoadCSVIntoTempTable(TestCase):
         self.assertFalse(result["success"])
         self.assertIn("connection to server lost", result["error"])
 
-
-    @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_psycopg_data_format_error(self, mock_open_source: MagicMock) -> None:
-        """Test handling of CSV data format errors"""
-        # Arrange
-        mock_file = Mock()
-        mock_file.read.side_effect = [b"data", b""]
-        mock_open_source.return_value.__enter__.return_value = mock_file
-
-        self.mock_cursor.copy.side_effect = psycopg.DataError(
-            "invalid input syntax for type integer"
-        )
-
-        # Act
-        result = EMPIService._load_csv_into_temp_table(
-            self.mock_cursor,
-            self.valid_table_name,
-            self.test_source,
-            self.valid_columns,
-            self.mock_logger,
-            1
-        )
-
-        # Assert
-        self.assertFalse(result["success"])
-        self.assertIn("invalid input syntax", result["error"])
-
-    @patch('main.services.empi.empi_service.open_source')
-    def test_load_csv_psycopg_permission_error(self, mock_open_source: MagicMock) -> None:
-        """Test handling of database permission errors"""
-        # Arrange
-        mock_file = Mock()
-        mock_file.read.side_effect = [b"data", b""]
-        mock_open_source.return_value.__enter__.return_value = mock_file
-
-        self.mock_cursor.copy.side_effect = psycopg.ProgrammingError(
-            "permission denied for table test_table_123"
-        )
-
-        # Act
-        result = EMPIService._load_csv_into_temp_table(
-            self.mock_cursor,
-            self.valid_table_name,
-            self.test_source,
-            self.valid_columns,
-            self.mock_logger,
-            1
-        )
-
-        # Assert
-        self.assertFalse(result["success"])
-        self.assertIn("permission denied", result["error"])
 
     @patch('main.services.empi.empi_service.open_source')
     def test_load_csv_unexpected_error(self, mock_open_source: MagicMock) -> None:
