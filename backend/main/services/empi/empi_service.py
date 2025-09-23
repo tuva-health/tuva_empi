@@ -334,8 +334,7 @@ class EMPIService:
                     job = self.create_job(source, config_id)
 
                     table = PersonRecordStaging._meta.db_table
-                    # JUST FOR TESTING
-                    temp_table = table + "_temporary"
+                    temp_table = table + "_temp"
                     # Create temporary table like PersonRecord table but without
                     # id, created or job_id columns
 
@@ -385,7 +384,6 @@ class EMPIService:
         except (DataError, IntegrityError) as e:
             msg = f"Incorrectly formatted person records file due to {e}"
             self.logger.error(msg)
-            self.logger.error("I am a message")
             raise InvalidPersonRecordFileFormat(msg) from e
 
     def get_data_sources(self) -> list[DataSourceDict]:
