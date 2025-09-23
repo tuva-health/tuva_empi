@@ -70,7 +70,7 @@ test_splink_settings = {
             "output_column_name": "first_name",
             "comparison_levels": [
                 {
-                    "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
+                    "sql_condition": 'COALESCE("first_name_l", "first_name_r") IS NULL',
                     "label_for_charts": "first_name is NULL",
                     "is_null_level": True,
                 },
