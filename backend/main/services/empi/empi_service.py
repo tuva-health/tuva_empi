@@ -38,13 +38,13 @@ from main.models import (
     User,
 )
 from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
-from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
 from main.util.record_preprocessor import (
-    create_transformation_functions,
-    transform_all_columns,
-    remove_invalid_and_dedupe,
     TableResult,
+    create_transformation_functions,
+    remove_invalid_and_dedupe,
+    transform_all_columns,
 )
+from main.util.sql import try_advisory_lock
 
 
 class PartialConfigDict(TypedDict):
@@ -2091,7 +2091,6 @@ class EMPIService:
         logger: logging.Logger,
     ) -> TableResult:
         """Create temporary table with all TEXT columns for raw data loading."""
-
         if not columns:
             error_msg = "Cannot create table with no columns"
             logger.error(error_msg)
@@ -2138,7 +2137,6 @@ class EMPIService:
                 columns=sql.SQL(", ").join(sql.Identifier(col) for col in columns),
             )
 
-            # Load data using chunked streaming approach like import_person_records
             with open_source(source) as f, cursor.copy(copy_sql) as copy:
                 while chunk := f.read(DEFAULT_BUFFER_SIZE):
                     copy.write(chunk)
@@ -2151,9 +2149,7 @@ class EMPIService:
             loaded_count = cursor.fetchone()[0]
 
             logger.info(f"Loaded {loaded_count:,} records from CSV into {temp_table}")
-            return TableResult(
-                success=True, message=loaded_count
-            )  # Return count as integer
+            return TableResult(success=True, message=str(loaded_count))
 
         except FileNotFoundError as e:
             error_msg = f"CSV file not found: {e}"

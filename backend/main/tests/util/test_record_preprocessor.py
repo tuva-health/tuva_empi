@@ -1,13 +1,14 @@
 from unittest import TestCase
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
+
 import psycopg
 from django.db import DatabaseError
 from django.db.backends.utils import CursorWrapper
 
 from main.util.record_preprocessor import (
     create_transformation_functions,
-    transform_all_columns,
     remove_invalid_and_dedupe,
+    transform_all_columns,
 )
 
 
@@ -119,7 +120,7 @@ class TestTransformationFunctions(TestCase):
 
 
 class TestTransformAllColumns(TestCase):
-    """Test the main transformation function"""
+    """Test the main transformation function."""
 
     def setUp(self) -> None:
         self.mock_cursor = Mock(spec=CursorWrapper)
@@ -127,7 +128,7 @@ class TestTransformAllColumns(TestCase):
         self.invalid_table_name = "test-table!"
 
     def test_transform_all_columns_success(self) -> None:
-        """Test successful transformation of all columns"""
+        """Test successful transformation of all columns."""
         # Arrange
         self.mock_cursor.execute.return_value = None
 
@@ -160,7 +161,7 @@ class TestTransformAllColumns(TestCase):
             self.assertIn(transformation, executed_sql)
 
     def test_transform_all_columns_valid_table_names(self) -> None:
-        """Test that valid table names are accepted"""
+        """Test that valid table names are accepted."""
         valid_names = [
             "users",
             "user_data",
@@ -180,7 +181,7 @@ class TestTransformAllColumns(TestCase):
     def test_transform_all_columns_invalid_table_names(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test that invalid table names are rejected"""
+        """Test that invalid table names are rejected."""
         invalid_names = [
             "test-table",  # Contains hyphen
             "123table",  # Starts with number
@@ -205,7 +206,7 @@ class TestTransformAllColumns(TestCase):
     def test_transform_all_columns_programming_error(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test handling of SQL syntax errors during transformation"""
+        """Test handling of SQL syntax errors during transformation."""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
             "function normalize_first_name(text) does not exist"
@@ -227,7 +228,7 @@ class TestTransformAllColumns(TestCase):
     def test_transform_all_columns_operational_error(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test handling of database connection errors"""
+        """Test handling of database connection errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.OperationalError(
             "server closed the connection unexpectedly"
@@ -246,7 +247,7 @@ class TestTransformAllColumns(TestCase):
 
     @patch("main.util.record_preprocessor.logger")
     def test_transform_all_columns_database_error(self, mock_logger: MagicMock) -> None:
-        """Test handling of general database errors"""
+        """Test handling of general database errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = DatabaseError(
             "table 'test_table_123' doesn't exist"
@@ -269,7 +270,7 @@ class TestTransformAllColumns(TestCase):
     def test_transform_all_columns_unexpected_error(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test handling of unexpected errors"""
+        """Test handling of unexpected errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = RuntimeError("unexpected runtime error")
 
@@ -285,14 +286,14 @@ class TestTransformAllColumns(TestCase):
 
 
 class TestRemoveInvalidAndDedupe(TestCase):
-    """Test the cleanup and deduplication function"""
+    """Test the cleanup and deduplication function."""
 
     def setUp(self) -> None:
         self.mock_cursor = Mock(spec=CursorWrapper)
         self.valid_table_name = "test_table_123"
 
     def test_remove_invalid_and_dedupe_success(self) -> None:
-        """Test successful cleanup and deduplication"""
+        """Test successful cleanup and deduplication."""
         from unittest.mock import MagicMock
 
         self.mock_cursor = MagicMock()
@@ -313,7 +314,7 @@ class TestRemoveInvalidAndDedupe(TestCase):
     def test_remove_invalid_and_dedupe_invalid_table_names(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test that invalid table names are rejected"""
+        """Test that invalid table names are rejected."""
         invalid_names = [
             "test-table",
             "123table",
@@ -342,7 +343,7 @@ class TestRemoveInvalidAndDedupe(TestCase):
     def test_remove_invalid_and_dedupe_database_error(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test handling of general database errors"""
+        """Test handling of general database errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = DatabaseError(
             "insufficient permissions for DELETE operations"
@@ -363,7 +364,7 @@ class TestRemoveInvalidAndDedupe(TestCase):
     def test_remove_invalid_and_dedupe_unexpected_error(
         self, mock_logger: MagicMock
     ) -> None:
-        """Test handling of unexpected errors"""
+        """Test handling of unexpected errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = ValueError("unexpected error")
 

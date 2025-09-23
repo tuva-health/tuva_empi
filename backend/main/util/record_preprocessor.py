@@ -1,11 +1,11 @@
-import re
-from typing import TypedDict, NotRequired
-
-from django.db.backends.utils import CursorWrapper
-from django.db import DatabaseError
-import psycopg
-from psycopg import sql
 import logging
+import re
+from typing import NotRequired, TypedDict
+
+import psycopg
+from django.db import DatabaseError
+from django.db.backends.utils import CursorWrapper
+from psycopg import sql
 
 
 class TableResult(TypedDict, total=False):

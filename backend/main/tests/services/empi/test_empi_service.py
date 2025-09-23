@@ -1,21 +1,19 @@
 import io
+import logging
 import os
 import threading
 import uuid
-import logging
-import psycopg
-
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as tz
 from typing import IO, Any, Iterator, Mapping, Optional, cast
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
+import psycopg
 from django.db import connection
 from django.db.backends.utils import CursorWrapper
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone as django_tz
-
 
 from main.models import (
     Config,
@@ -71,7 +69,7 @@ class ImportPersonRecordsTestCase(TestCase):
         with connection.cursor() as cursor:
             try:
                 cursor.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
-            except Exception as e:
+            except Exception:
                 pass  # Skip if no permissions
 
     @classmethod
@@ -4377,7 +4375,7 @@ class ExportPersonRecordsTestCase(TestCase):
 
 
 class TestCreateRawTempTable(TestCase):
-    """Test the _create_raw_temp_table helper function"""
+    """Test the _create_raw_temp_table helper function."""
 
     def setUp(self) -> None:
         self.mock_cursor = Mock(spec=CursorWrapper)
@@ -4386,7 +4384,7 @@ class TestCreateRawTempTable(TestCase):
         self.valid_columns = ["first_name", "last_name", "email"]
 
     def test_create_raw_temp_table_success(self) -> None:
-        """Test successful table creation"""
+        """Test successful table creation."""
         # Arrange
         self.mock_cursor.execute.return_value = None
 
@@ -4411,7 +4409,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn('"email" TEXT', executed_sql)
 
     def test_create_raw_temp_table_empty_columns(self) -> None:
-        """Test error when no columns provided"""
+        """Test error when no columns provided."""
         # Act
         result = EMPIService._create_raw_temp_table(
             self.mock_cursor, self.valid_table_name, [], self.mock_logger
@@ -4426,7 +4424,7 @@ class TestCreateRawTempTable(TestCase):
         self.mock_cursor.execute.assert_not_called()
 
     def test_create_raw_temp_table_programming_error_syntax(self) -> None:
-        """Test handling of SQL syntax errors"""
+        """Test handling of SQL syntax errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.ProgrammingError(
             "syntax error at or near 'CREATE'"
@@ -4446,7 +4444,7 @@ class TestCreateRawTempTable(TestCase):
         self.mock_logger.error.assert_called_once()
 
     def test_create_raw_temp_table_operational_error_disk_space(self) -> None:
-        """Test handling of disk space errors"""
+        """Test handling of disk space errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.OperationalError(
             "could not extend file: No space left on device"
@@ -4466,7 +4464,7 @@ class TestCreateRawTempTable(TestCase):
         self.mock_logger.error.assert_called_once()
 
     def test_create_raw_temp_table_database_error(self) -> None:
-        """Test handling of general database errors"""
+        """Test handling of general database errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = psycopg.DatabaseError(
             "database is locked"
@@ -4486,7 +4484,7 @@ class TestCreateRawTempTable(TestCase):
         self.assertIn("database is locked", result["error"])
 
     def test_create_raw_temp_table_unexpected_error(self) -> None:
-        """Test handling of unexpected errors"""
+        """Test handling of unexpected errors."""
         # Arrange
         self.mock_cursor.execute.side_effect = ValueError("unexpected error")
 
@@ -4505,7 +4503,7 @@ class TestCreateRawTempTable(TestCase):
 
 
 class TestLoadCSVIntoTempTable(TestCase):
-    """Test the _load_csv_into_temp_table helper function"""
+    """Test the _load_csv_into_temp_table helper function."""
 
     def setUp(self) -> None:
         # Use MagicMock for better context manager support
@@ -4528,7 +4526,7 @@ class TestLoadCSVIntoTempTable(TestCase):
     @patch("main.services.empi.empi_service.DEFAULT_BUFFER_SIZE", 1024)
     @patch("main.services.empi.empi_service.open_source")
     def test_load_csv_success(self, mock_open_source: MagicMock) -> None:
-        """Test successful CSV loading"""
+        """Test successful CSV loading."""
         # Arrange
         mock_file = Mock()
         mock_file.read.side_effect = [
@@ -4558,7 +4556,7 @@ class TestLoadCSVIntoTempTable(TestCase):
 
         # Assert
         self.assertTrue(result["success"])
-        self.assertEqual(result["message"], 1000)
+        self.assertEqual(result["message"], str(1000))
 
         # Verify file operations
         mock_open_source.assert_called_once_with(self.test_source)
@@ -4583,7 +4581,7 @@ class TestLoadCSVIntoTempTable(TestCase):
 
     @patch("main.services.empi.empi_service.open_source")
     def test_load_csv_file_not_found(self, mock_open_source: MagicMock) -> None:
-        """Test handling of file not found errors"""
+        """Test handling of file not found errors."""
         # Arrange
         mock_open_source.side_effect = FileNotFoundError("No such file or directory")
 
@@ -4605,7 +4603,7 @@ class TestLoadCSVIntoTempTable(TestCase):
 
     @patch("main.services.empi.empi_service.open_source")
     def test_load_csv_permission_error(self, mock_open_source: MagicMock) -> None:
-        """Test handling of file permission errors"""
+        """Test handling of file permission errors."""
         # Arrange
         mock_open_source.side_effect = PermissionError("Permission denied")
 
@@ -4626,10 +4624,9 @@ class TestLoadCSVIntoTempTable(TestCase):
 
     @patch("main.services.empi.empi_service.open_source")
     def test_load_csv_encoding_error(self, mock_open_source: MagicMock) -> None:
-        """Test handling of file encoding errors"""
+        """Test handling of file encoding errors."""
         # Arrange
         mock_file = Mock()
-        mock_copy = Mock()
         # Encoding error occurs during read, not readline
         mock_file.read.side_effect = UnicodeDecodeError(
             "utf-8", b"\xff\xfe", 0, 2, "invalid start byte"
@@ -4655,7 +4652,7 @@ class TestLoadCSVIntoTempTable(TestCase):
     def test_load_csv_psycopg_connection_error(
         self, mock_open_source: MagicMock
     ) -> None:
-        """Test handling of database connection errors"""
+        """Test handling of database connection errors."""
         # Arrange
         mock_file = Mock()
         mock_file.read.side_effect = [b"data", b""]
@@ -4682,7 +4679,7 @@ class TestLoadCSVIntoTempTable(TestCase):
 
     @patch("main.services.empi.empi_service.open_source")
     def test_load_csv_unexpected_error(self, mock_open_source: MagicMock) -> None:
-        """Test handling of unexpected errors"""
+        """Test handling of unexpected errors."""
         # Arrange
         mock_file = Mock()
         mock_file.read.side_effect = [b"data", b""]
@@ -4707,7 +4704,7 @@ class TestLoadCSVIntoTempTable(TestCase):
 
     @patch("main.services.empi.empi_service.open_source")
     def test_load_csv_zero_records(self, mock_open_source: MagicMock) -> None:
-        """Test loading CSV with zero records (edge case)"""
+        """Test loading CSV with zero records (edge case)."""
         # Arrange
         mock_file = Mock()
         mock_file.read.side_effect = [b"header\n", b""]  # Only header, no data
