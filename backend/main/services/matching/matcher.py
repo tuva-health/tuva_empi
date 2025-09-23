@@ -6,7 +6,7 @@ from typing import (
     cast,
 )
 
-import duckdb
+import duckdb  # type: ignore[import-untyped]
 import pandas as pd
 from django.db import connection, transaction
 from django.db.backends.utils import CursorWrapper
