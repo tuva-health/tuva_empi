@@ -73,6 +73,7 @@ test_splink_settings = {
                     "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
                     "label_for_charts": "first_name is NULL",
                     "is_null_level": True,
+                    "tf_adjustment_column": None,
                 },
                 {
                     "sql_condition": '"first_name_l" = "first_name_r"',
