@@ -213,7 +213,9 @@ class TestTransformAllColumns(TestCase):
 
         error_message = mock_logger.error.call_args[0][0]
         self.assertIn(self.valid_table_name, error_message)
-        self.assertIn("function normalize_first_name(text) does not exist", error_message)
+        self.assertIn(
+            "function normalize_first_name(text) does not exist", error_message
+        )
 
     @patch("main.util.record_preprocessor.logger")
     def test_transform_all_columns_operational_error(
