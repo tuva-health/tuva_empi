@@ -51,10 +51,7 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert (
-            error_message
-            == "Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: syntax error at or near 'FUNCTION'"
-        )
+        self.assertIn("syntax error at or near 'FUNCTION'", error_message)
 
     @patch("main.util.record_preprocessor.logger")
     def test_create_transformation_functions_operational_error(
@@ -73,10 +70,7 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert (
-            error_message
-            == "Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: connection to server lost"
-        )
+        self.assertIn("connection to server lost", error_message)
 
     @patch("main.util.record_preprocessor.logger")
     def test_create_transformation_functions_database_error(
@@ -93,10 +87,7 @@ class TestTransformationFunctions(TestCase):
         self.assertFalse(result["success"])
         mock_logger.error.assert_called_once()
         error_message = mock_logger.error.call_args[0][0]
-        assert (
-            error_message
-            == "Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: insufficient privileges"
-        )
+        self.assertIn("insufficient privileges", error_message)
 
     @patch("main.util.record_preprocessor.logger")
     def test_create_transformation_functions_unexpected_error(
@@ -221,8 +212,8 @@ class TestTransformAllColumns(TestCase):
         mock_logger.error.assert_called_once()
 
         error_message = mock_logger.error.call_args[0][0]
-        self.assertIn("SQL syntax error", error_message)
         self.assertIn(self.valid_table_name, error_message)
+        self.assertIn("function normalize_first_name(text) does not exist", error_message)
 
     @patch("main.util.record_preprocessor.logger")
     def test_transform_all_columns_operational_error(
@@ -242,8 +233,7 @@ class TestTransformAllColumns(TestCase):
         mock_logger.error.assert_called_once()
 
         error_message = mock_logger.error.call_args[0][0]
-        self.assertIn("database connection or operational error", error_message)
-        self.assertIn("Check database connectivity", error_message)
+        self.assertIn("server closed the connection unexpectedly", error_message)
 
     @patch("main.util.record_preprocessor.logger")
     def test_transform_all_columns_database_error(self, mock_logger: MagicMock) -> None:

@@ -487,14 +487,10 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
             $$ LANGUAGE plpgsql IMMUTABLE;
         """)
         return TableResult(success=True, message="Transformations successfully created")
-    except psycopg.ProgrammingError as e:
-        error_msg = f"Failed to create PostgreSQL transformation functions - SQL syntax error. Check function definitions and SQL syntax: {e}"
+    except psycopg.Error as e:
+        error_msg = f"Failed to create PostgreSQL transformation functions - {e}"
         logger.error(error_msg)
-        return TableResult(success=False, message=error_msg)
-    except psycopg.OperationalError as e:
-        error_msg = f"Failed to create PostgreSQL transformation functions - database connection or operational error. Check database connectivity and permissions: {e}"
-        logger.error(error_msg)
-        return TableResult(success=False, message=error_msg)
+        return TableResult(success=False, error=error_msg)
     except DatabaseError as e:
         error_msg = f"Failed to create PostgreSQL transformation functions - database error. This may indicate insufficient privileges to create functions: {e}"
         logger.error(error_msg)
@@ -533,15 +529,10 @@ def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> TableRes
         """).format(table_name=sql.Identifier(temp_table))
         db_cursor.execute(transform_sql)
         return TableResult(success=True, message="Transformations successfully applied")
-
-    except psycopg.ProgrammingError as e:
-        error_msg = f"Failed to apply data transformations to table '{temp_table}' - SQL syntax error: {e}"
+    except psycopg.Error as e:
+        error_msg = f"Failed to apply data transformations to table '{temp_table} - {e}"
         logger.error(error_msg)
-        return TableResult(success=False, message=error_msg)
-    except psycopg.OperationalError as e:
-        error_msg = f"Failed to apply data transformations to table '{temp_table}' - database connection or operational error. Check database connectivity: {e}"
-        logger.error(error_msg)
-        return TableResult(success=False, message=error_msg)
+        return TableResult(success=False, error=error_msg)
     except DatabaseError as e:
         error_msg = f"Failed to apply data transformations to table '{temp_table}' - database error. Ensure transformation functions exist and table is accessible: {e}"
         logger.error(error_msg)
@@ -614,7 +605,7 @@ def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> Tabl
     except psycopg.Error as e:
         error_msg = f"Failed to clean up records from table '{temp_table} - {e}"
         logger.error(error_msg)
-        return TableResult(success=False, error=str(error_msg))
+        return TableResult(success=False, error=error_msg)
     except DatabaseError as e:
         logger.error(
             f"Failed to cleanup records from table '{temp_table}' - database error. This may indicate table lock issues or insufficient permissions for DELETE operations: {e}"
