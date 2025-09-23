@@ -17,6 +17,81 @@ class TableResult(TypedDict, total=False):
 logger = logging.getLogger(__name__)
 
 
+def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> TableResult:
+    """Remove invalid records and duplicates."""
+    # Validate table name
+    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", temp_table):
+        error_msg = f"Invalid table name: {temp_table}"
+        logger.error(error_msg)
+        return TableResult(success=False, message=error_msg)
+
+    try:
+        # Remove records with null source_person_id or '' after trimming
+        delete_source_person_id_nulls_sql = sql.SQL("""
+            DELETE FROM {table_name}
+            WHERE source_person_id IS NULL
+                OR TRIM (source_person_id) = ''
+        """).format(table_name=sql.Identifier(temp_table))
+        db_cursor.execute(delete_source_person_id_nulls_sql)
+
+        # Remove records with null datasource or '' after trimming
+        delete_data_source_nulls_sql = sql.SQL("""
+            DELETE FROM {table_name}
+            WHERE data_source IS NULL
+                OR TRIM (data_source) = ''
+        """).format(table_name=sql.Identifier(temp_table))
+        db_cursor.execute(delete_data_source_nulls_sql)
+
+        # Get count after removing nulls
+        count_sql = sql.SQL("SELECT COUNT(*) FROM {table_name}").format(
+            table_name=sql.Identifier(temp_table)
+        )
+        db_cursor.execute(count_sql)
+        current_count = db_cursor.fetchone()[0]
+
+        if current_count == 0:
+            return TableResult(
+                success=False,
+                message=f"Table '{temp_table}' is empty after removing null source_person_id and data_source. Please check your data.",
+            )
+
+        # Remove duplicates (keeping first occurrence)
+        delete_dupes_sql = sql.SQL("""
+            DELETE FROM {table_name} a
+                USING {table_name} b
+                WHERE a.ctid > b.ctid
+                AND COALESCE (a.source_person_id, '') = COALESCE (b.source_person_id, '')
+                AND COALESCE (a.first_name, '') = COALESCE (b.first_name, '')
+                AND COALESCE (a.last_name, '') = COALESCE (b.last_name, '')
+                AND COALESCE (a.birth_date, '') = COALESCE (b.birth_date, '')
+                AND COALESCE (a.social_security_number, '') = COALESCE (b.social_security_number, '')
+        """).format(table_name=sql.Identifier(temp_table))
+        db_cursor.execute(delete_dupes_sql)
+
+        # get final count
+        db_cursor.execute(count_sql)
+        final_count = db_cursor.fetchone()[0]
+        return TableResult(
+            success=True,
+            message=f"Removed {final_count} records from table '{temp_table}'",
+        )
+
+    except psycopg.Error as e:
+        error_msg = f"Failed to clean up records from table '{temp_table} - {e}"
+        logger.error(error_msg)
+        return TableResult(success=False, error=error_msg)
+    except DatabaseError as e:
+        logger.error(
+            f"Failed to cleanup records from table '{temp_table}' - database error. This may indicate table lock issues or insufficient permissions for DELETE operations: {e}"
+        )
+        return TableResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(
+            f"Failed to cleanup records from table '{temp_table}' - unexpected error during record deletion and deduplication: {e}"
+        )
+        return TableResult(success=False, error=str(e))
+
+
 def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
     """Create all PostgreSQL functions needed for preprocessing transformations."""
     try:
@@ -503,15 +578,13 @@ def create_transformation_functions(db_cursor: CursorWrapper) -> TableResult:
 
 def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> TableResult:
     """Apply all transformations in a single UPDATE statement."""
-    # Validate first to guard again SQL injection
-    # Only allow alphanumeric, underscoes
+    # Validate table name to guard against SQL injection
     if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", temp_table):
         error_msg = f"Invalid table name: {temp_table}"
         logger.error(error_msg)
         return {"success": False, "error": error_msg}
 
     try:
-        # TODO - this is currently 1 step. For speed. Do we want more information on where things fail?
         transform_sql = sql.SQL("""
             UPDATE {table_name} SET
                 first_name = normalize_first_name(first_name),
@@ -541,78 +614,3 @@ def transform_all_columns(db_cursor: CursorWrapper, temp_table: str) -> TableRes
         error_msg = f"Failed to apply data transformations to table '{temp_table}' - unexpected error during column transformation: {e}"
         logger.error(error_msg)
         return TableResult(success=False, message=error_msg)
-
-
-def remove_invalid_and_dedupe(db_cursor: CursorWrapper, temp_table: str) -> TableResult:
-    """Remove invalid records and duplicates."""
-    # Validate table name
-    if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", temp_table):
-        error_msg = f"Invalid table name: {temp_table}"
-        logger.error(error_msg)
-        return TableResult(success=False, message=error_msg)
-
-    try:
-        # Remove records with null source_person_id or '' after trimming
-        delete_source_person_id_nulls_sql = sql.SQL("""
-            DELETE FROM {table_name}
-            WHERE source_person_id IS NULL
-                OR TRIM (source_person_id) = ''
-        """).format(table_name=sql.Identifier(temp_table))
-        db_cursor.execute(delete_source_person_id_nulls_sql)
-
-        # Remove records with null datasource or '' after trimming
-        delete_data_source_nulls_sql = sql.SQL("""
-            DELETE FROM {table_name}
-            WHERE data_source IS NULL
-                OR TRIM (data_source) = ''
-        """).format(table_name=sql.Identifier(temp_table))
-        db_cursor.execute(delete_data_source_nulls_sql)
-
-        # Get count after removing nulls
-        count_sql = sql.SQL("SELECT COUNT(*) FROM {table_name}").format(
-            table_name=sql.Identifier(temp_table)
-        )
-        db_cursor.execute(count_sql)
-        current_count = db_cursor.fetchone()[0]
-
-        if current_count == 0:
-            return TableResult(
-                success=False,
-                message=f"Table '{temp_table}' is empty after removing null source_person_id and data_source. Please check your data.",
-            )
-
-        # Remove duplicates (keeping first occurrence)
-        delete_dupes_sql = sql.SQL("""
-            DELETE FROM {table_name} a
-                USING {table_name} b
-                WHERE a.ctid > b.ctid
-                AND COALESCE (a.source_person_id, '') = COALESCE (b.source_person_id, '')
-                AND COALESCE (a.first_name, '') = COALESCE (b.first_name, '')
-                AND COALESCE (a.last_name, '') = COALESCE (b.last_name, '')
-                AND COALESCE (a.birth_date, '') = COALESCE (b.birth_date, '')
-                AND COALESCE (a.social_security_number, '') = COALESCE (b.social_security_number, '')
-        """).format(table_name=sql.Identifier(temp_table))
-        db_cursor.execute(delete_dupes_sql)
-
-        # get final count
-        db_cursor.execute(count_sql)
-        final_count = db_cursor.fetchone()[0]
-        return TableResult(
-            success=True,
-            message=f"Removed {final_count} records from table '{temp_table}'",
-        )
-
-    except psycopg.Error as e:
-        error_msg = f"Failed to clean up records from table '{temp_table} - {e}"
-        logger.error(error_msg)
-        return TableResult(success=False, error=error_msg)
-    except DatabaseError as e:
-        logger.error(
-            f"Failed to cleanup records from table '{temp_table}' - database error. This may indicate table lock issues or insufficient permissions for DELETE operations: {e}"
-        )
-        return TableResult(success=False, error=str(e))
-    except Exception as e:
-        logger.error(
-            f"Failed to cleanup records from table '{temp_table}' - unexpected error during record deletion and deduplication: {e}"
-        )
-        return TableResult(success=False, error=str(e))
