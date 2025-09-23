@@ -4726,7 +4726,7 @@ class TestLoadCSVIntoTempTable(TestCase):
 
         # Assert
         self.assertTrue(result["success"])  # Still successful, just empty
-        self.assertEqual(result["message"], 0)
+        self.assertEqual(result["message"], "0")
 
         log_message = self.mock_logger.info.call_args[0][0]
         self.assertIn("Loaded 0 records", log_message)
