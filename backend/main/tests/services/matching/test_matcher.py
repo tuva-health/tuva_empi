@@ -58,6 +58,7 @@ class HashableRecordPartialDict(TypedDict):
     county: str | None
     phone: str | None
 
+
 test_splink_settings = SettingsCreator(
     link_type="dedupe_only",  # adjust as needed
     probability_two_random_records_match=0.00298012298012298,
@@ -170,7 +171,7 @@ test_splink_settings = SettingsCreator(
 
 class MatcherTestCase(TestCase):
     logger: logging.Logger
-    #splink_settings: dict[str, Any]
+    # splink_settings: dict[str, Any]
     splink_settings: SettingsCreator
 
     def setUp(self) -> None:
