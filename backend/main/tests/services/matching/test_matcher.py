@@ -18,7 +18,6 @@ from django.utils import timezone
 from psycopg import sql
 from splink.dsl import col
 
-
 from main.models import (
     Config,
     Job,
