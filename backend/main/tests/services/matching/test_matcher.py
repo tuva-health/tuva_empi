@@ -16,7 +16,7 @@ from django.db import DatabaseError, OperationalError, connection, transaction
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
-from splink.dsl import col
+from splink.dsl import col  # type: ignore[import-untyped]
 
 from main.models import (
     Config,
