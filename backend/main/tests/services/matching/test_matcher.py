@@ -79,8 +79,8 @@ test_splink_settings = {
                     "label_for_charts": "Exact match on first_name",
                     "m_probability": 0.49142094931763786,
                     "u_probability": 0.0057935713975033705,
-                    "tf_adjustment_column": "first_name_l",
-                    "tf_adjustment_weight": 1.0,
+                    # "tf_adjustment_column": "first_name",
+                    # "tf_adjustment_weight": 1.0,
                 },
                 {
                     "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.92',
