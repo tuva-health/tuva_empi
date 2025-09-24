@@ -16,6 +16,8 @@ from django.db import DatabaseError, OperationalError, connection, transaction
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
+from splink.dsl import col
+
 
 from main.models import (
     Config,
@@ -70,12 +72,12 @@ test_splink_settings = {
             "output_column_name": "first_name",
             "comparison_levels": [
                 {
-                    "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
+                    "sql_condition": col("first_name").is_null(),
                     "label_for_charts": "first_name is NULL",
                     "is_null_level": True,
                 },
                 {
-                    "sql_condition": '"first_name_l" = "first_name_r"',
+                    "sql_condition": col("first_name_l") == col("first_name_r"),
                     "label_for_charts": "Exact match on first_name",
                     "m_probability": 0.49142094931763786,
                     "u_probability": 0.0057935713975033705,
