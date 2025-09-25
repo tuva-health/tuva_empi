@@ -1861,7 +1861,7 @@ class ProcessNextJobTestCase(TransactionTestCase):
             {
                 "splink_settings": copy.deepcopy(
                     test_splink_settings.create_settings_dict(
-                        sql_dialect_str="postgresql"
+                        sql_dialect_str="postgres"
                     )
                 ),
                 # Increase the potential match threshold so that run_splink_prediction returns zero results
