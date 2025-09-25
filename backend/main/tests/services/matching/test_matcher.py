@@ -1860,7 +1860,9 @@ class ProcessNextJobTestCase(TransactionTestCase):
         self.config = self.empi.create_config(
             {
                 "splink_settings": copy.deepcopy(
-                    test_splink_settings.create_settings_dict()
+                    test_splink_settings.create_settings_dict(
+                        sql_dialect_str="postgresql"
+                    )
                 ),
                 # Increase the potential match threshold so that run_splink_prediction returns zero results
                 "potential_match_threshold": 0.002,
