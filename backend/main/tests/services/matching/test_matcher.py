@@ -16,7 +16,7 @@ from django.db import DatabaseError, OperationalError, connection, transaction
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
-from splink import SettingsCreator, block_on
+from splink import SettingsCreator, block_on  # type: ignore[import-untyped]
 
 from main.models import (
     Config,
@@ -171,8 +171,7 @@ test_splink_settings = SettingsCreator(
 
 class MatcherTestCase(TestCase):
     logger: logging.Logger
-    # splink_settings: dict[str, Any]
-    splink_settings: SettingsCreator
+    splink_settings: SettingsCreator  # type: ignore[no-any-unimported]
 
     def setUp(self) -> None:
         self.maxDiff = None
@@ -1860,7 +1859,7 @@ class ProcessNextJobTestCase(TransactionTestCase):
         self.empi = EMPIService()
         self.config = self.empi.create_config(
             {
-                "splink_settings": copy.deepcopy(test_splink_settings),
+                "splink_settings": copy.deepcopy(test_splink_settings.as_dict()),
                 # Increase the potential match threshold so that run_splink_prediction returns zero results
                 "potential_match_threshold": 0.002,
                 "auto_match_threshold": 0.0023,
