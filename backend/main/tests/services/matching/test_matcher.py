@@ -1859,7 +1859,7 @@ class ProcessNextJobTestCase(TransactionTestCase):
         self.empi = EMPIService()
         self.config = self.empi.create_config(
             {
-                "splink_settings": copy.deepcopy(test_splink_settings.as_dict()),
+                "splink_settings": copy.deepcopy(test_splink_settings.create_settings_dict()),
                 # Increase the potential match threshold so that run_splink_prediction returns zero results
                 "potential_match_threshold": 0.002,
                 "auto_match_threshold": 0.0023,
