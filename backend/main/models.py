@@ -127,6 +127,9 @@ class Person(models.Model):
                 check=models.Q(record_count__gte=0), name="record_count_gte_zero"
             )
         ]
+        indexes = [
+            models.Index(fields=["id"]),
+        ]
 
 
 class PersonRecord(models.Model):
@@ -162,6 +165,8 @@ class PersonRecord(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["data_source"]),
+            models.Index(fields=["id"]),
+            models.Index(fields=["source_person_id"]),
         ]
 
 
