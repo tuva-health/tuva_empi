@@ -330,83 +330,99 @@ class MatchGraph:
         )
         start_time = time.perf_counter()
 
-        match_groups: list[MatchGroupRow] = []
-        results: list[MatchGroupResultRow] = []
+        # These are the unique person ids belonging to each match group
+        match_group_persons: dict[str, set[int]] = {}
+        # A dictionary of match group results indexed by edge index for lookups
+        result_dict: dict[int, MatchGroupResultRow] = {}
         person_actions: list[PersonActionRow] = []
 
         # Each connected component represents Persons and PersonRecords related to a unique MatchGroup
         match_group_components = rx.connected_components(self.graph)
 
-        # Get MatchGroups and auto-matched PersonRecords
+        # Track the node index <-> match group uuid mapping
+        match_group_by_node_idx: dict[int, str] = {}
+
+        # Get MatchGroups and Person records for groups containing 1 person id
         for match_group_component in match_group_components:
             match_group_uuid = str(uuid4())
-            match_group_graph = self.graph.subgraph(list(match_group_component))
+            match_group_persons[match_group_uuid] = set()
 
-            for edge in match_group_graph.edges():
-                if isinstance(edge, ResultEdge):
-                    # NOTE: We could also update results in place
-                    results.append((edge.id, match_group_uuid))
-
-            # Get PersonActions for auto-matches
-            auto_match_group_edges = match_group_graph.filter_edges(
-                lambda edge: (
-                    self.is_auto_match_edge(edge, auto_match_threshold)
-                    or self.is_person_membership_edge(edge)
-                )
-            )
-            auto_match_group_edge_list = [
-                match_group_graph.get_edge_endpoints_by_index(edge_idx)
-                for edge_idx in auto_match_group_edges
-            ]
-
-            auto_match_graph = match_group_graph.edge_subgraph(
-                auto_match_group_edge_list
-            )
-            auto_match_components = rx.connected_components(auto_match_graph)
-
-            for auto_match_component in auto_match_components:
-                auto_match_subgraph = auto_match_graph.subgraph(
-                    list(auto_match_component)
-                )
-                person_record_nodes: list[PersonRecordNode] = []
-                person_nodes: list[PersonNode] = []
-
-                for node in auto_match_subgraph.nodes():
-                    if self.is_person_record_node(node):
-                        person_record_nodes.append(cast(PersonRecordNode, node))
-                    else:
-                        assert self.is_person_node(node)
-                        person_nodes.append(cast(PersonNode, node))
-
-                # Choose a representative person for the auto-match
-                chosen_person = self.choose_person(person_nodes)
-
-                for person_record_node in person_record_nodes:
-                    # Add PersonAction to update PersonRecord Person's due to auto-match
-                    if person_record_node.person_id != chosen_person.id:
-                        person_actions.append(
-                            (
-                                match_group_uuid,
-                                person_record_node.id,
-                                person_record_node.person_id,
-                                person_record_node.person_version,
-                                chosen_person.id,
-                                chosen_person.version,
-                            )
-                        )
-                        # Update Person on PersonRecord nodes in order to determine if
-                        # a MatchGroup has been fully matched
-                        person_record_node.person_id = chosen_person.id
-
-            # If all PersonRecords have the same Person ID then MatchGroup.matched = true
-            person_ids: set[int] = set()
-
-            for node in match_group_graph.nodes():
+            for node_idx in match_group_component:
+                node = self.graph.get_node_data(node_idx)
+                match_group_by_node_idx[node_idx] = match_group_uuid
                 if self.is_person_record_node(node):
-                    person_ids.add(cast(PersonRecordNode, node).person_id)
+                    match_group_persons[match_group_uuid].add(
+                        cast(PersonRecordNode, node).person_id
+                    )
+                for _parent_idx, _node_idx, edge in self.graph.out_edges(node_idx):
+                    if isinstance(edge, ResultEdge):
+                        # NOTE: We could also update results in place
+                        result_dict[edge.id] = (edge.id, match_group_uuid)
 
-            match_groups.append((match_group_uuid, len(person_ids) == 1))
+        # Create a graph of only auto-matched edges. This is more performant than
+        # creating subgraphs for each match group, because whilest it may require a
+        # larger search area, it copies signifcantly less data. Creating subgraphs is
+        # an expensive operation.
+        auto_match_group_edges = self.graph.filter_edges(
+            lambda edge: (
+                self.is_auto_match_edge(edge, auto_match_threshold)
+                or self.is_person_membership_edge(edge)
+            )
+        )
+        auto_match_group_edge_list = [
+            self.graph.get_edge_endpoints_by_index(edge_idx)
+            for edge_idx in auto_match_group_edges
+        ]
+        auto_match_graph = self.graph.edge_subgraph(auto_match_group_edge_list)
+        auto_match_components = rx.connected_components(auto_match_graph)
 
+        # Iterate over all of the connected auto-match components, updating the
+        # records & the match groups as we go.
+        for auto_match_component in auto_match_components:
+            person_record_nodes: list[PersonRecordNode] = []
+            person_nodes: list[PersonNode] = []
+            person_match_groups: dict[int, str] = {}
+
+            for node_idx in auto_match_component:
+                node = auto_match_graph.get_node_data(node_idx)
+                if self.is_person_record_node(node):
+                    person_record_nodes.append(cast(PersonRecordNode, node))
+                else:
+                    assert self.is_person_node(node)
+                    person_match_groups[node.id] = match_group_by_node_idx[node_idx]
+                    person_nodes.append(cast(PersonNode, node))
+
+            # Choose a representative person for the auto-match
+            chosen_person = self.choose_person(person_nodes)
+
+            for person_record_node in person_record_nodes:
+                # Add PersonAction to update PersonRecord Person's due to auto-match
+                if person_record_node.person_id != chosen_person.id:
+                    person_actions.append(
+                        (
+                            person_match_groups[chosen_person.id],
+                            person_record_node.id,
+                            person_record_node.person_id,
+                            person_record_node.person_version,
+                            chosen_person.id,
+                            chosen_person.version,
+                        )
+                    )
+                    # Update Person on PersonRecord nodes in order to determine if
+                    # a MatchGroup has been fully matched
+                    match_group_uid = person_match_groups[chosen_person.id]
+                    # Remove this person id from the match group, since we're going
+                    # to override it
+                    match_group_persons[match_group_uid].discard(
+                        person_record_node.person_id
+                    )
+                    person_record_node.person_id = chosen_person.id
+
+        match_groups = [
+            (match_group_uuid, len(person_ids) == 1)
+            for match_group_uuid, person_ids in match_group_persons.items()
+        ]
+        results = list(result_dict.values())
         match_analysis: MatchAnalysis = {
             "match_groups": pd.DataFrame(
                 match_groups, columns=[member.name for member in MatchGroupRowField]

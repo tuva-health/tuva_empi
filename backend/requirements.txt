@@ -16,4 +16,4 @@ PyJWT==2.10.1
 requests==2.32.3
 rustworkx==0.15.1
 s3fs==2025.5.1
-splink==4.0.6
+splink==4.0.9
