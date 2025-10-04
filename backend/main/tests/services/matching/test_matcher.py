@@ -16,6 +16,7 @@ from django.db import DatabaseError, OperationalError, connection, transaction
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 from psycopg import sql
+from splink import SettingsCreator, block_on  # type: ignore[import-untyped]
 
 from main.models import (
     Config,
@@ -58,14 +59,16 @@ class HashableRecordPartialDict(TypedDict):
     phone: str | None
 
 
-test_splink_settings = {
-    "probability_two_random_records_match": 0.00298012298012298,
-    "em_convergence": 0.0001,
-    "max_iterations": 25,
-    "blocking_rules_to_generate_predictions": [
-        {"blocking_rule": '(l."last_name" = r."last_name")'},
+test_splink_settings = SettingsCreator(
+    link_type="dedupe_only",  # adjust as needed
+    probability_two_random_records_match=0.00298012298012298,
+    em_convergence=0.0001,
+    max_iterations=25,
+    blocking_rules_to_generate_predictions=[
+        block_on("last_name"),
     ],
-    "comparisons": [
+    comparisons=[
+        # First name comparison with custom levels matching your original config
         {
             "output_column_name": "first_name",
             "comparison_levels": [
@@ -110,12 +113,65 @@ test_splink_settings = {
             "comparison_description": "NameComparison",
         }
     ],
-}
+)
+# test_splink_settings_old = {
+#     "probability_two_random_records_match": 0.00298012298012298,
+#     "em_convergence": 0.0001,
+#     "max_iterations": 25,
+#     "blocking_rules_to_generate_predictions": [
+#         {"blocking_rule": '(l."last_name" = r."last_name")'},
+#     ],
+#     "comparisons": [
+#         {
+#             "output_column_name": "first_name",
+#             "comparison_levels": [
+#                 {
+#                     "sql_condition": col("first_name").is_null(),
+#                     "label_for_charts": "first_name is NULL",
+#                     "is_null_level": True,
+#                 },
+#                 {
+#                     "sql_condition": col("first_name_l") == col("first_name_r"),
+#                     "label_for_charts": "Exact match on first_name",
+#                     "m_probability": 0.49142094931763786,
+#                     "u_probability": 0.0057935713975033705,
+#                     "tf_adjustment_column": "first_name",
+#                     "tf_adjustment_weight": 1.0,
+#                 },
+#                 {
+#                     "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.92',
+#                     "label_for_charts": "Jaro-Winkler distance of first_name >= 0.92",
+#                     "m_probability": 0.15176057384758357,
+#                     "u_probability": 0.0023429457903817435,
+#                 },
+#                 {
+#                     "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.88',
+#                     "label_for_charts": "Jaro-Winkler distance of first_name >= 0.88",
+#                     "m_probability": 0.07406496776118936,
+#                     "u_probability": 0.0015484319951285285,
+#                 },
+#                 {
+#                     "sql_condition": 'jaro_winkler_similarity("first_name_l", "first_name_r") >= 0.7',
+#                     "label_for_charts": "Jaro-Winkler distance of first_name >= 0.7",
+#                     "m_probability": 0.07908610771504865,
+#                     "u_probability": 0.018934945558406913,
+#                 },
+#                 {
+#                     "sql_condition": "ELSE",
+#                     "label_for_charts": "All other comparisons",
+#                     "m_probability": 0.20366740135854072,
+#                     "u_probability": 0.9713801052585794,
+#                 },
+#             ],
+#             "comparison_description": "NameComparison",
+#         }
+#     ],
+# }
 
 
 class MatcherTestCase(TestCase):
     logger: logging.Logger
-    splink_settings: dict[str, Any]
+    splink_settings: SettingsCreator  # type: ignore[no-any-unimported]
 
     def setUp(self) -> None:
         self.maxDiff = None
@@ -1803,7 +1859,11 @@ class ProcessNextJobTestCase(TransactionTestCase):
         self.empi = EMPIService()
         self.config = self.empi.create_config(
             {
-                "splink_settings": copy.deepcopy(test_splink_settings),
+                "splink_settings": copy.deepcopy(
+                    test_splink_settings.create_settings_dict(
+                        sql_dialect_str="postgres"
+                    )
+                ),
                 # Increase the potential match threshold so that run_splink_prediction returns zero results
                 "potential_match_threshold": 0.002,
                 "auto_match_threshold": 0.0023,
