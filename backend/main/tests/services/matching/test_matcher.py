@@ -69,11 +69,12 @@ test_splink_settings = {
         {
             "output_column_name": "first_name",
             "comparison_levels": [
-                {
-                    "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
-                    "label_for_charts": "first_name is NULL",
-                    "is_null_level": True,
-                },
+                # {
+                #     "sql_condition": '"first_name_l" IS NULL OR "first_name_r" IS NULL',
+                #     "label_for_charts": "first_name is NULL",
+                #     "is_null_level": True,
+                #     "tf_adjustment_column": None,
+                # },
                 {
                     "sql_condition": '"first_name_l" = "first_name_r"',
                     "label_for_charts": "Exact match on first_name",

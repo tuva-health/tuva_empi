@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import IO, Any, Mapping, NotRequired, Optional, TypedDict, cast
 
+import psycopg
 from django.core.files.uploadedfile import UploadedFile
 from django.db import connection, transaction
 from django.db.backends.utils import CursorWrapper
@@ -37,7 +38,13 @@ from main.models import (
     User,
 )
 from main.util.io import DEFAULT_BUFFER_SIZE, get_uri, open_sink, open_source
-from main.util.sql import create_temp_table_like, drop_column, try_advisory_lock
+from main.util.record_preprocessor import (
+    TableResult,
+    create_transformation_functions,
+    remove_invalid_and_dedupe,
+    transform_all_columns,
+)
+from main.util.sql import try_advisory_lock
 
 
 class PartialConfigDict(TypedDict):
@@ -48,6 +55,10 @@ class PartialConfigDict(TypedDict):
 
 class InvalidPersonRecordFileFormat(Exception):
     """File format is invalid when loading person records via a CSV file."""
+
+
+class PersonRecordImportError(Exception):
+    """Wrapper for Exceptions in PersonRecord import process."""
 
 
 class DataSourceDict(TypedDict):
@@ -332,38 +343,53 @@ class EMPIService:
                 with connection.cursor() as cursor:
                     # Create job
                     job = self.create_job(source, config_id)
-
                     table = PersonRecordStaging._meta.db_table
                     temp_table = table + "_temp"
 
-                    # Create temporary table like PersonRecord table but without
-                    # id, created or job_id columns
-
-                    create_temp_table_like(cursor, table=temp_table, like_table=table)
-                    drop_column(cursor, temp_table, "id")
-                    drop_column(cursor, temp_table, "created")
-                    drop_column(cursor, temp_table, "job_id")
-                    drop_column(cursor, temp_table, "row_number")
-
-                    # Load person records from S3 object into temporary table
-                    # TODO add as util function in main.util.sql
-
-                    copy_sql = sql.SQL(
-                        "copy {table} ({columns}) from stdin with (format csv, delimiter ',', header)"
-                    ).format(
-                        table=sql.Identifier(temp_table),
-                        columns=sql.SQL(",").join(
-                            [sql.Identifier(col) for col in csv_col_names]
-                        ),
+                    # 1. Create temporary table
+                    self.logger.info("Creating temporary table")
+                    result = self._create_raw_temp_table(
+                        cursor, temp_table, csv_col_names, self.logger
                     )
+                    if not result["success"]:
+                        raise PersonRecordImportError(result["error"])
 
-                    with open_source(source) as f, cursor.copy(copy_sql) as copy:
-                        while chunk := f.read(DEFAULT_BUFFER_SIZE):
-                            copy.write(chunk)
+                    # 2. Load data into temp table
+                    self.logger.info("Loading data into temporary table")
+                    result = self._load_csv_into_temp_table(
+                        cursor,
+                        temp_table,
+                        source,
+                        csv_col_names,
+                        self.logger,
+                        config_id,
+                    )
+                    if not result["success"]:
+                        raise InvalidPersonRecordFileFormat(result["error"])
 
+                    # 3. Remove invalid rows and dedupe
+                    self.logger.info("Cleaning up invalid records, and deduping")
+                    dedupe_result = remove_invalid_and_dedupe(cursor, temp_table)
+                    if not dedupe_result["success"]:
+                        raise PersonRecordImportError(result["error"])
+
+                    # 4. Create all transformation functions
+                    self.logger.info("Creating preprocessing transformations")
+                    create_result = create_transformation_functions(cursor)
+                    if not create_result["success"]:
+                        raise PersonRecordImportError(result["error"])
+
+                    # 5. Apply transformations
+                    self.logger.info("Applying preprocessing transformations")
+                    transformation_result = transform_all_columns(cursor, temp_table)
+                    if not transformation_result["success"]:
+                        raise PersonRecordImportError(result["error"])
+
+                    # TODO add as util function in main.util.sql
                     # Load data from temporary table into PersonRecordStaging table,
                     # including job_id column
 
+                    self.logger.info("Inserting into staging table")
                     insert_sql = sql.SQL(
                         """
                             insert into {table} (job_id, created, {columns})
@@ -377,9 +403,9 @@ class EMPIService:
                             [sql.Identifier(col) for col in csv_col_names]
                         ),
                     )
-
                     cursor.execute(insert_sql, {"job_id": job.id})
-
+                    final_count = cursor.rowcount
+                    self.logger.info(f"successfully inserted {final_count} records")
                     return job.id
 
         except (DataError, IntegrityError) as e:
@@ -2056,3 +2082,98 @@ class EMPIService:
             )
 
             return estimated_count
+
+    @staticmethod
+    def _create_raw_temp_table(
+        cursor: CursorWrapper,
+        temp_table: str,
+        columns: list[str],
+        logger: logging.Logger,
+    ) -> TableResult:
+        """Create temporary table with all TEXT columns for raw data loading."""
+        if not columns:
+            error_msg = "Cannot create table with no columns"
+            logger.error(error_msg)
+            return {"success": False, "error": error_msg}
+
+        try:
+            column_defs = [f'"{col}" TEXT' for col in columns]
+            create_sql = f"""
+                CREATE TEMP TABLE {temp_table} (
+                    {', '.join(column_defs)}
+                )
+            """
+            cursor.execute(create_sql)
+            return TableResult(
+                success=True, message=f"Table '{temp_table}' created successfully."
+            )
+
+        except psycopg.Error as e:
+            error_msg = f"Database error during temp table creation: {e}"
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
+
+        except Exception as e:
+            error_msg = f"Unexpected error creating table '{temp_table}': {e}"
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
+
+    @staticmethod
+    def _load_csv_into_temp_table(
+        cursor: CursorWrapper,
+        temp_table: str,
+        source: str | UploadedFile,
+        columns: list[str],
+        logger: logging.Logger,
+        job_id: int,
+    ) -> TableResult:
+        """Load CSV data into temporary table."""
+        try:
+            # Use PostgreSQL COPY for efficient loading
+            copy_sql = sql.SQL(
+                "COPY {table} ({columns}) FROM STDIN WITH (FORMAT CSV, DELIMITER ',', HEADER)"
+            ).format(
+                table=sql.Identifier(temp_table),
+                columns=sql.SQL(", ").join(sql.Identifier(col) for col in columns),
+            )
+
+            with open_source(source) as f, cursor.copy(copy_sql) as copy:
+                while chunk := f.read(DEFAULT_BUFFER_SIZE):
+                    copy.write(chunk)
+
+            # Get count of loaded records
+            count_sql = sql.SQL("SELECT COUNT(*) FROM {table}").format(
+                table=sql.Identifier(temp_table)
+            )
+            cursor.execute(count_sql)
+            loaded_count = cursor.fetchone()[0]
+
+            logger.info(f"Loaded {loaded_count:,} records from CSV into {temp_table}")
+            return TableResult(success=True, message=str(loaded_count))
+
+        except FileNotFoundError as e:
+            error_msg = f"CSV file not found: {e}"
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
+
+        except PermissionError as e:
+            error_msg = f"Permission denied reading CSV file: {e}"
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
+
+        except UnicodeDecodeError as e:
+            error_msg = f"CSV file encoding error - file may not be UTF-8: {e}"
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
+
+        except psycopg.Error as e:
+            error_msg = f"Database error during CSV load: {e}"
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
+
+        except Exception as e:
+            error_msg = (
+                f"Unexpected error loading CSV into temp table '{temp_table}': {e}"
+            )
+            logger.error(error_msg)
+            return TableResult(success=False, error=error_msg)
