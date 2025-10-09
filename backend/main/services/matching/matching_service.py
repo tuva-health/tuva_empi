@@ -18,7 +18,7 @@ from main.models import (
 from main.services.matching.job_runner import JobRunner
 from main.services.matching.k8s_job_runner import K8sJobRunner
 from main.services.matching.process_job_runner import ProcessJobRunner
-from main.util.sql import obtain_advisory_lock
+from main.util.sql import obtain_advisory_lock, vacuum_db
 
 
 class MatchingService:
@@ -112,6 +112,8 @@ class MatchingService:
                     self.logger.exception("Unexpected job runner failure")
                     time.sleep(5)
         finally:
+            with connection.cursor() as cursor:
+                vacuum_db(cursor)
             self.logger.info("MatchingService stopped")
 
     def stop(self) -> None:

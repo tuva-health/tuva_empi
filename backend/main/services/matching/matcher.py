@@ -967,6 +967,14 @@ class Matcher:
             ["person_record_id"],
         )
 
+        # Create index on temporary table
+        create_index(
+            cursor,
+            table=person_record_id_temp_table,
+            column="person_record_id",
+            index_name=person_record_id_temp_table + "_person_record_id",
+        )
+
         # Retrieve/lock PersonRecord and Person rows that relate to IDs in temporary table
 
         select_persons_sql = sql.SQL(
