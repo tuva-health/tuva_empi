@@ -166,7 +166,6 @@ class PersonRecord(models.Model):
         indexes = [
             models.Index(fields=["data_source"]),
             models.Index(fields=["id"]),
-            models.Index(fields=["source_person_id"]),
         ]
 
 
