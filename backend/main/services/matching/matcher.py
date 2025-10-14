@@ -53,6 +53,7 @@ from main.util.sql import (
     extract_df,
     load_df,
     obtain_advisory_lock,
+    vacuum_db,
 )
 
 # id: int,
@@ -1959,3 +1960,6 @@ class Matcher:
                 f"Unexpected error while processing next Job {job.id if job else None}: {e}"
             )
             self.cleanup_failed_job(job, e)
+        finally:
+            with connection.cursor() as cursor:
+                vacuum_db(cursor)

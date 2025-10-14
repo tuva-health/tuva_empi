@@ -112,8 +112,6 @@ class MatchingService:
                     self.logger.exception("Unexpected job runner failure")
                     time.sleep(5)
         finally:
-            with connection.cursor() as cursor:
-                vacuum_db(cursor)
             self.logger.info("MatchingService stopped")
 
     def stop(self) -> None:
