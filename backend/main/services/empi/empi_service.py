@@ -166,6 +166,11 @@ class PersonSummaryDict(TypedDict):
     data_sources: list[str]
 
 
+class PersonSummaryResult(TypedDict):
+    persons: list[PersonSummaryDict]
+    total_count: int
+
+
 class EMPIService:
     logger: logging.Logger
 
@@ -1526,7 +1531,9 @@ class EMPIService:
         person_id: str = "",
         source_person_id: str = "",
         data_source: str = "",
-    ) -> list[PersonSummaryDict]:
+        page_size: int = 50,
+        page: int = 1,
+    ) -> PersonSummaryResult:
         self.logger.info("Retrieving persons")
 
         match_group_table = MatchGroup._meta.db_table
@@ -1569,10 +1576,13 @@ class EMPIService:
                         uuid::text,
                         (array_agg(first_name))[1] as first_name,
                         (array_agg(last_name))[1] as last_name,
-                        array_agg(distinct data_source) AS data_sources
+                        array_agg(distinct data_source) AS data_sources,
+                        count(*) over() as total_count
                     from p_records
                     group by uuid
-                    order by last_name, first_name;
+                    order by last_name, first_name
+                    limit {limit}
+                    offset {offset};
                 """
             ).format(
                 match_group_table=sql.Identifier(match_group_table),
@@ -1580,6 +1590,8 @@ class EMPIService:
                 person_record_table=sql.Identifier(person_record_table),
                 person_table=sql.Identifier(person_table),
                 search_conditions=sql.SQL(" ").join(search_conditions["conditions"]),
+                limit=sql.Literal(page_size),
+                offset=sql.Literal((page - 1) * page_size),
             )
             cursor.execute(get_persons_sql, search_conditions["params"])
 
@@ -1588,12 +1600,20 @@ class EMPIService:
             if cursor.rowcount > 0:
                 column_names = [c.name for c in cursor.description]
 
-                return [
-                    cast(PersonSummaryDict, dict(zip(column_names, row)))
-                    for row in cursor.fetchall()
-                ]
+                rows = cursor.fetchall()
+                total_count = (
+                    rows[0][column_names.index("total_count")] if len(rows) > 0 else 0
+                )
+
+                return PersonSummaryResult(
+                    persons=[
+                        cast(PersonSummaryDict, dict(zip(column_names, row)))
+                        for row in rows
+                    ],
+                    total_count=total_count,
+                )
             else:
-                return []
+                return PersonSummaryResult(persons=[], total_count=0)
 
     def get_person(self, uuid: str) -> PersonDict:
         self.logger.info(f"Retrieving person with id {uuid}")
