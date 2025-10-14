@@ -124,15 +124,22 @@ def get_potential_matches(request: Request) -> Response:
         filters["person_id"] = remove_prefix(filters["person_id"])
 
     try:
-        results = empi.get_potential_matches(**filters)
         page, page_size = pagination.get_pagination_params(data)
+        filters["page"] = page
+        filters["page_size"] = page_size
+        results = empi.get_potential_matches(**filters)
 
         transformed = [
-            {**pm, "id": get_object_id(pm["id"], "PotentialMatch")} for pm in results
+            {**pm, "id": get_object_id(pm["id"], "PotentialMatch")}
+            for pm in results["potential_matches"]
         ]
 
         return pagination.create_paginated_response(
-            transformed, page, page_size, response_key="potential_matches"
+            transformed,
+            page,
+            page_size,
+            response_key="potential_matches",
+            count=results["total_count"],
         )
     except Exception:
         logger.error("Failed to retrieve potential matches", exc_info=True)

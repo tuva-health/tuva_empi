@@ -67,6 +67,11 @@ class PotentialMatchSummaryDict(TypedDict):
     max_match_probability: float
 
 
+class PotentialMatchSummaryResult(TypedDict):
+    potential_matches: list[PotentialMatchSummaryDict]
+    total_count: int
+
+
 class PersonRecordDict(TypedDict):
     id: int
     created: datetime
@@ -445,7 +450,9 @@ class EMPIService:
         person_id: str = "",
         source_person_id: str = "",
         data_source: str = "",
-    ) -> list[PotentialMatchSummaryDict]:
+        page_size: int = 50,
+        page: int = 1,
+    ) -> PotentialMatchSummaryResult:
         self.logger.info("Retrieving potential matches")
 
         match_group_table = MatchGroup._meta.db_table
@@ -523,9 +530,12 @@ class EMPIService:
                         (array_agg(first_name order by record_id))[1] as first_name,
                         (array_agg(last_name order by record_id))[1] as last_name,
                         array_agg(distinct data_source order by data_source) AS data_sources,
-                        (array_agg(match_probability order by match_probability desc))[1] as max_match_probability
+                        (array_agg(match_probability order by match_probability desc))[1] as max_match_probability,
+                        count(*) over() as total_count
                     from mg_records
-                    group by id;
+                    group by id
+                    limit {page_size}
+                    offset {offset}
                 """
             ).format(
                 match_group_table=sql.Identifier(match_group_table),
@@ -533,6 +543,8 @@ class EMPIService:
                 person_record_table=sql.Identifier(person_record_table),
                 person_table=sql.Identifier(person_table),
                 search_conditions=sql.SQL(" ").join(search_conditions["conditions"]),
+                page_size=sql.Literal(page_size),
+                offset=sql.Literal((page - 1) * page_size),
             )
             cursor.execute(get_potential_matches_sql, search_conditions["params"])
 
@@ -541,12 +553,23 @@ class EMPIService:
             if cursor.rowcount > 0:
                 column_names = [c.name for c in cursor.description]
 
-                return [
-                    cast(PotentialMatchSummaryDict, dict(zip(column_names, row)))
-                    for row in cursor.fetchall()
-                ]
+                rows = cursor.fetchall()
+                total_count = (
+                    rows[0][column_names.index("total_count")] if len(rows) > 0 else 0
+                )
+
+                return PotentialMatchSummaryResult(
+                    potential_matches=[
+                        cast(PotentialMatchSummaryDict, dict(zip(column_names, row)))
+                        for row in rows
+                    ],
+                    total_count=total_count,
+                )
             else:
-                return []
+                return PotentialMatchSummaryResult(
+                    potential_matches=[],
+                    total_count=0,
+                )
 
     def _get_potential_match_persons(
         self,
@@ -722,7 +745,7 @@ class EMPIService:
             records_clause = f"""
                 array_agg(
                     jsonb_build_object(
-                        {', '.join(field_mappings)}
+                        {", ".join(field_mappings)}
                     )
                 ) as records
             """
@@ -1236,9 +1259,9 @@ class EMPIService:
         self.logger.info(f"Marked MatchGroup {match_group.id} as matched")
 
     def validate_person_update(self, person_update: PersonUpdateDict) -> bool:
-        assert (
-            "new_person_record_ids" in person_update
-        ), "new_person_record_ids is required in PersonUpdate"
+        assert "new_person_record_ids" in person_update, (
+            "new_person_record_ids is required in PersonUpdate"
+        )
 
         if person_update.get("uuid") and not person_update.get("version"):
             raise InvalidPersonUpdate(

@@ -21,13 +21,13 @@ class PaginationMixin:
         return page, page_size
 
     def paginate_list(
-        self, items: List[Any], page: int, page_size: int
+        self, items: List[Any], page: int, page_size: int, count: int | None = None
     ) -> Dict[str, Any]:
         """Paginate a list of items and return pagination metadata."""
-        total_count = len(items)
+        total_count = count if count is not None else len(items)
         start_index = (page - 1) * page_size
         end_index = start_index + page_size
-        paginated_items = items[start_index:end_index]
+        paginated_items = items[start_index:end_index] if count is None else items
 
         total_pages = (total_count + page_size - 1) // page_size
         has_next = page < total_pages
@@ -48,10 +48,16 @@ class PaginationMixin:
         }
 
     def create_paginated_response(
-        self, items: List[Any], page: int, page_size: int, response_key: str = "items"
+        self,
+        items: List[Any],
+        page: int,
+        page_size: int,
+        response_key: str = "items",
+        # Optional total count if already known & different from len(items)
+        count: int | None = None,
     ) -> Response:
         """Create a paginated response with standard format."""
-        paginated_data = self.paginate_list(items, page, page_size)
+        paginated_data = self.paginate_list(items, page, page_size, count)
 
         return Response(
             {
