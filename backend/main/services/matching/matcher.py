@@ -6,7 +6,7 @@ from typing import (
     cast,
 )
 
-import duckdb  # type: ignore[import-untyped]
+import duckdb
 import pandas as pd
 from django.db import connection, transaction
 from django.db.backends.utils import CursorWrapper
@@ -53,6 +53,7 @@ from main.util.sql import (
     extract_df,
     load_df,
     obtain_advisory_lock,
+    vacuum_db,
 )
 
 # id: int,
@@ -965,6 +966,14 @@ class Matcher:
             person_record_id_temp_table,
             unique_person_record_id_df,
             ["person_record_id"],
+        )
+
+        # Create index on temporary table
+        create_index(
+            cursor,
+            table=person_record_id_temp_table,
+            column="person_record_id",
+            index_name=person_record_id_temp_table + "_person_record_id",
         )
 
         # Retrieve/lock PersonRecord and Person rows that relate to IDs in temporary table
@@ -1951,3 +1960,6 @@ class Matcher:
                 f"Unexpected error while processing next Job {job.id if job else None}: {e}"
             )
             self.cleanup_failed_job(job, e)
+        finally:
+            with connection.cursor() as cursor:
+                vacuum_db(cursor)

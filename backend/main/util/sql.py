@@ -12,6 +12,11 @@ from main.models import DbLockId
 logger = logging.getLogger(__name__)
 
 
+def vacuum_db(cursor: CursorWrapper) -> None:
+    stmt = sql.SQL("vacuum analyze;")
+    cursor.execute(stmt)
+
+
 def create_temp_table(
     cursor: CursorWrapper, table: str, columns: list[tuple[str, str, str]]
 ) -> None:
@@ -85,6 +90,11 @@ def create_index(
         column=sql.Identifier(column),
     )
     cursor.execute(stmt)
+
+    analyze_stmt = sql.SQL("analyze {table};").format(
+        table=sql.Identifier(table),
+    )
+    cursor.execute(analyze_stmt)
 
 
 def load_data(
