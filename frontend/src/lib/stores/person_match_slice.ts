@@ -12,11 +12,7 @@ import type {
 import * as api from "@/lib/api";
 import { AppStore } from "./types";
 
-// FIXME: Use separate state field for storing expanded records?
-
 export interface PersonRecordWithMetadata extends PersonRecord {
-  // Whether or not the full details of the PersonRecord are shown
-  expanded: boolean;
   // Store the highest match probability for this record
   highest_match_probability?: number;
   [key: string]: string | number | boolean | Date | undefined;
@@ -61,6 +57,12 @@ export interface PersonMatchState {
     // Indexed by Person ID
     currentPersons: Record<string, PersonWithMetadata>;
     selectedPersonId: string | null;
+
+    // Indexed by Record ID
+    expandedRecords: Record<string, Record<string, PersonRecordWithMetadata>>;
+
+    isSidebarOpen: boolean;
+    isMergeModalOpen: boolean;
   };
 }
 
@@ -96,21 +98,24 @@ export interface PersonMatchActions {
 
     matchPersonRecords: (potentialMatchId: string) => Promise<void>;
 
-    // NOTE: This nested format isn't the easiest to update (notice all the parameters required).
-    // Perhaps we can have things more relational for updating and join them into a nested format
-    // for rendering. But not sure the best approach for computing derived data with Zustand. See:
-    // https://github.com/pmndrs/zustand/issues/108
-    setPersonRecordExpanded: (
-      personId: string,
-      recordId: string,
-      expanded: boolean,
-      potentialMatchId?: string,
-    ) => void;
-
     /**
      * Creates a new person in the current potential match
      */
-    createNewPerson: (potentialMatchId: string) => void;
+    createNewPerson: (potentialMatchId: string, merge?: boolean) => void;
+
+    toggleExpandedRecord: (
+      id: string,
+      record: PersonRecordWithMetadata,
+    ) => void;
+    clearExpandedRecords: () => void;
+
+    toggleSidebar: (isOpen?: boolean) => void;
+
+    openMergeModal: () => void;
+    closeMergeModal: () => void;
+    mergePersons: (targetPersonId: string) => void;
+
+    removePerson: (id: string) => void;
   };
 }
 
@@ -133,6 +138,10 @@ export const defaultInitState: PersonMatchState = {
     persons: {},
     currentPersons: {},
     selectedPersonId: null,
+
+    expandedRecords: {},
+    isSidebarOpen: true,
+    isMergeModalOpen: false,
   },
 };
 
@@ -284,15 +293,22 @@ export const createPersonMatchSlice =
        * Select PotentialMatch or Person, depending on matchMode
        */
       selectSummary: (id: string): void => {
-        if (get().personMatch.matchMode) {
-          set((state) => {
+        set((state) => {
+          const expandedRecords = state.personMatch.expandedRecords;
+
+          if (get().personMatch.matchMode) {
             state.personMatch.selectedPotentialMatchId = id;
-          });
-        } else {
-          set((state) => {
+          } else {
             state.personMatch.selectedPersonId = id;
-          });
-        }
+          }
+
+          if (
+            id in expandedRecords &&
+            Object.keys(expandedRecords[id]).length > 0
+          ) {
+            state.personMatch.isSidebarOpen = false;
+          }
+        });
       },
 
       /**
@@ -350,41 +366,6 @@ export const createPersonMatchSlice =
       },
 
       /**
-       * Expands an individual PersonRecord, depending on matchMode
-       */
-      setPersonRecordExpanded: (
-        personId: string,
-        recordId: string,
-        expanded: boolean,
-        potentialMatchId?: string,
-      ): void => {
-        set((state) => {
-          if (state.personMatch.matchMode) {
-            if (!potentialMatchId) {
-              throw Error(
-                "potentialMatchId is required when matchMode is true",
-              );
-            }
-
-            for (const record of state.personMatch.currentPotentialMatches[
-              potentialMatchId
-            ].persons[personId].records) {
-              if (record.id === recordId) {
-                record.expanded = expanded;
-              }
-            }
-          } else {
-            for (const record of state.personMatch.currentPersons[personId]
-              .records) {
-              if (record.id === recordId) {
-                record.expanded = expanded;
-              }
-            }
-          }
-        });
-      },
-
-      /**
        * PotentialMatch actions
        */
 
@@ -427,7 +408,6 @@ export const createPersonMatchSlice =
                     ...person,
                     records: person.records.map((r) => ({
                       ...r,
-                      expanded: false,
                       highest_match_probability:
                         highestMatchProbabilities[r.id],
                     })),
@@ -511,7 +491,6 @@ export const createPersonMatchSlice =
                   ...person,
                   records: person.records.map((r) => ({
                     ...r,
-                    expanded: false,
                     highest_match_probability: highestMatchProbabilities[r.id],
                   })),
                 };
@@ -553,10 +532,7 @@ export const createPersonMatchSlice =
             state.personMatch.persons[person.id] = person;
             state.personMatch.currentPersons[person.id] = {
               ...person,
-              records: person.records.map((r) => ({
-                ...r,
-                expanded: false,
-              })),
+              records: person.records.map((r) => ({ ...r })),
             };
           });
         }
@@ -576,10 +552,7 @@ export const createPersonMatchSlice =
 
           state.personMatch.currentPersons[id] = {
             ...person,
-            records: person.records.map((r) => ({
-              ...r,
-              expanded: false,
-            })),
+            records: person.records.map((r) => ({ ...r })),
           };
         });
       },
@@ -587,7 +560,7 @@ export const createPersonMatchSlice =
       /**
        * Creates a new person in the current potential match
        */
-      createNewPerson: (potentialMatchId: string): void => {
+      createNewPerson: (potentialMatchId: string, merge?: boolean): void => {
         set((state) => {
           const potentialMatch =
             state.personMatch.currentPotentialMatches[potentialMatchId];
@@ -610,6 +583,190 @@ export const createPersonMatchSlice =
             created: new Date(),
             records: [],
           };
+
+          if (merge) {
+            const allRecords: PersonRecordWithMetadata[] = [];
+
+            for (const person of Object.values(potentialMatch.persons)) {
+              if (person.id !== newPersonId) {
+                allRecords.push(...person.records);
+                person.records = [];
+              }
+            }
+
+            potentialMatch.persons[newPersonId].records.push(...allRecords);
+          }
+        });
+
+        if (merge) {
+          get().personMatch.closeMergeModal();
+        }
+      },
+
+      toggleExpandedRecord: (
+        id: string,
+        record: PersonRecordWithMetadata,
+      ): void => {
+        set((state) => {
+          const matchMode = state.personMatch.matchMode;
+          const expandedRecords = state.personMatch.expandedRecords;
+
+          const selectedSummaryId = matchMode
+            ? state.personMatch.selectedPotentialMatchId
+            : state.personMatch.selectedPersonId;
+
+          if (!selectedSummaryId) {
+            return;
+          }
+
+          const summaryExists = selectedSummaryId in expandedRecords;
+
+          if (summaryExists) {
+            if (id in expandedRecords[selectedSummaryId])
+              delete state.personMatch.expandedRecords[selectedSummaryId][id];
+            else {
+              state.personMatch.expandedRecords[selectedSummaryId] = {
+                ...state.personMatch.expandedRecords[selectedSummaryId],
+                [id]: record,
+              };
+            }
+          } else {
+            state.personMatch.expandedRecords = {
+              ...state.personMatch.expandedRecords,
+              [selectedSummaryId]: {
+                [id]: record,
+              },
+            };
+          }
+
+          if (
+            Object.keys(state.personMatch.expandedRecords[selectedSummaryId])
+              ?.length === 0
+          ) {
+            state.personMatch.isSidebarOpen = true;
+          } else {
+            state.personMatch.isSidebarOpen = false;
+          }
+        });
+      },
+
+      clearExpandedRecords: (): void => {
+        set((state) => {
+          const matchMode = state.personMatch.matchMode;
+          const selectedPId = state.personMatch.selectedPersonId;
+          const selectedPMId = state.personMatch.selectedPotentialMatchId;
+
+          state.personMatch.isSidebarOpen = true;
+
+          if (matchMode) {
+            if (selectedPMId) {
+              delete state.personMatch.expandedRecords[selectedPMId];
+            }
+          } else {
+            if (selectedPId) {
+              delete state.personMatch.expandedRecords[selectedPId];
+            }
+          }
+        });
+      },
+
+      toggleSidebar: (isOpen?: boolean): void => {
+        set((state) => {
+          state.personMatch.isSidebarOpen =
+            isOpen ?? !state.personMatch.isSidebarOpen;
+        });
+      },
+
+      openMergeModal: (): void => {
+        set((state) => {
+          state.personMatch.isMergeModalOpen = true;
+        });
+      },
+
+      closeMergeModal: (): void => {
+        set((state) => {
+          state.personMatch.isMergeModalOpen = false;
+        });
+      },
+
+      mergePersons: (targetPersonId: string): void => {
+        const { matchMode, selectedPotentialMatchId, currentPotentialMatches } =
+          get().personMatch;
+
+        if (
+          !matchMode ||
+          !selectedPotentialMatchId ||
+          !(selectedPotentialMatchId in currentPotentialMatches)
+        ) {
+          console.error(
+            "Cannot merge persons: not in match mode or no potential match selected",
+          );
+          return;
+        }
+
+        set((state) => {
+          const currentMatch =
+            state.personMatch.currentPotentialMatches[selectedPotentialMatchId];
+
+          if (!currentMatch) {
+            console.error("Current PotentialMatch does not exist");
+            return;
+          }
+
+          // Collect all records from all persons except the target
+          const allRecords: PersonRecordWithMetadata[] = [];
+          // const personsToRemove: string[] = [];
+
+          for (const person of Object.values(currentMatch.persons)) {
+            if (person.id !== targetPersonId) {
+              allRecords.push(
+                ...person.records.map((r) => ({
+                  ...r,
+                  person_id: targetPersonId,
+                })),
+              );
+
+              person.records = [];
+              // personsToRemove.push(person.id);
+            }
+          }
+
+          // Add all records to the target person
+          const targetPerson = currentMatch.persons[targetPersonId];
+
+          if (targetPerson) {
+            targetPerson.records.push(...allRecords);
+          }
+
+          // Remove the other persons
+          // for (const personId of personsToRemove) {
+          //   delete currentMatch.persons[personId];
+          // }
+        });
+
+        // TODO: Update the PotentialMatch API with the new records
+
+        get().personMatch.closeMergeModal();
+      },
+
+      removePerson: (id: string): void => {
+        set((state) => {
+          const selectedPotentialMatchId =
+            state.personMatch.selectedPotentialMatchId;
+
+          if (
+            !selectedPotentialMatchId ||
+            !(
+              selectedPotentialMatchId in
+              state.personMatch.currentPotentialMatches
+            )
+          ) {
+            return;
+          }
+
+          delete state.personMatch.currentPotentialMatches[
+            selectedPotentialMatchId
+          ].persons[id];
         });
       },
     },

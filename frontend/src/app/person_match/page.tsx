@@ -3,17 +3,12 @@
 import React, { Suspense, useEffect, useState } from "react";
 import NavBar from "@/app/nav_bar";
 import { Tab } from "@/components/nav";
-import { Switch } from "@/components/ui/switch";
 import { LoaderCircle } from "lucide-react";
 import { RecordManager } from "@/app/person_match/record_manager";
 import { PersonList } from "@/app/person_match/person_list";
 import { useAppStore } from "@/providers/app_store_provider";
-import { getRoute, Route } from "@/lib/routes";
-import {
-  ReadonlyURLSearchParams,
-  useRouter,
-  useSearchParams,
-} from "next/navigation";
+import { ReadonlyURLSearchParams, useSearchParams } from "next/navigation";
+import RecordsComparison from "@/app/person_match/records_comparison";
 
 const getMatchModeParam = (searchParams: ReadonlyURLSearchParams): boolean => {
   return searchParams.get("matchMode") === "true";
@@ -24,27 +19,18 @@ const getMatchModeParam = (searchParams: ReadonlyURLSearchParams): boolean => {
  * Suspense component.
  */
 const PersonMatchPageImpl: React.FC = () => {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const matchMode = useAppStore((state) => state.personMatch.matchMode);
-  const selectedPotentialMatchId = useAppStore(
-    (state) => state.personMatch.selectedPotentialMatchId,
-  );
-  const selectedPersonId = useAppStore(
-    (state) => state.personMatch.selectedPersonId,
-  );
-  const setMatchMode = useAppStore((state) => state.personMatch.setMatchMode);
-  const selectSummary = useAppStore((state) => state.personMatch.selectSummary);
-  const fetchDataSources = useAppStore(
-    (state) => state.personMatch.fetchDataSources,
-  );
-  const fetchSummaries = useAppStore(
-    (state) => state.personMatch.fetchSummaries,
-  );
-  const fetchPotentialMatch = useAppStore(
-    (state) => state.personMatch.fetchPotentialMatch,
-  );
-  const fetchPerson = useAppStore((state) => state.personMatch.fetchPerson);
+
+  const {
+    matchMode,
+    fetchPerson,
+    setMatchMode,
+    selectSummary,
+    fetchSummaries,
+    fetchDataSources,
+    fetchPotentialMatch,
+  } = useAppStore((state) => state.personMatch);
+
   const [loading, setLoading] = useState(true);
 
   // Set state based on page query parameters
@@ -86,46 +72,21 @@ const PersonMatchPageImpl: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-full">
       <NavBar selectedTab={Tab.personMatch} />
+
       {loading ? (
         <></>
       ) : (
         <>
-          <div className="w-full h-[92px] border-b-[1px] border-muted-foreground flex flex-row justify-between items-center pt-5 p-6">
+          <div className="flex items-center justify-between w-full h-[60px] min-h-[60px] px-6 border-b border-muted-foreground">
             <h1 className="text-foreground scroll-m-20 text-[32px] font-extrabold tracking-tight">
               Person Match
             </h1>
-            <div className="flex flex-row gap-2 items-center p-3 pr-5 bg-light-blue rounded-[64px]">
-              <Switch
-                id="match-mode"
-                checked={matchMode ?? false}
-                onCheckedChange={(checked: boolean) => {
-                  setMatchMode(checked);
-
-                  const params: { matchMode?: string; id?: string } = {};
-
-                  if (checked) {
-                    params.matchMode = "true";
-
-                    if (selectedPotentialMatchId) {
-                      params.id = selectedPotentialMatchId;
-                    }
-                  } else {
-                    if (selectedPersonId) {
-                      params.id = selectedPersonId;
-                    }
-                  }
-
-                  router.push(getRoute(Route.personMatch, undefined, params), {
-                    scroll: false,
-                  });
-                }}
-              />
-              <span className="text-sm">Match Mode</span>
-            </div>
           </div>
-          <div className="flex flex-row px-6 h-full w-full overflow-hidden">
+
+          <div className="grid grid-cols-[minmax(60px,max-content)_minmax(768px,1fr)_minmax(0px,max-content)] h-full w-full overflow-x-hidden">
             <PersonList />
             <RecordManager />
+            <RecordsComparison />
           </div>
         </>
       )}

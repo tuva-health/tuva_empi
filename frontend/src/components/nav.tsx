@@ -1,10 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Logo from "@/images/tuva_banner.svg";
-import { Menu as MenuIcon } from "lucide-react";
+import {
+  Menu as MenuIcon,
+  CircleUser as UserIcon,
+  ChevronDown as ArrowDownIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,14 +20,24 @@ import {
 
 interface MenuProps {
   items: { label: string; path: string }[];
+  customIcon?: (isOpen: boolean) => React.ReactNode;
 }
 
-const Menu: React.FC<MenuProps> = ({ items }: MenuProps) => {
+const Menu: React.FC<MenuProps> = ({ items, customIcon }: MenuProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="p-[10px]">
-          <MenuIcon className="!h-6 !w-6" />
+        <Button
+          variant="ghost"
+          className="p-[10px] focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
+          {!!customIcon ? (
+            customIcon(isOpen)
+          ) : (
+            <MenuIcon className="!h-6 !w-6" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
@@ -57,24 +71,29 @@ const Nav: React.FC<NavProps> = ({ homePath, menuItems, selectedTab }) => {
         <ul className="flex flex-row h-full items-center">
           {Object.values(Tab).map((tab) => (
             <li key={tab} className="h-full">
-              {tab === selectedTab ? (
-                <Button
-                  variant="link"
-                  disabled={true}
-                  className="h-full text-black border-b-[5px] border-black disabled:opacity-100 rounded-none"
-                >
-                  Person Match
-                </Button>
-              ) : (
-                <Button variant="link" className="h-full rounded-none">
-                  Person Match
-                </Button>
-              )}
+              <Button
+                variant="link"
+                disabled={tab === selectedTab}
+                className={`h-full rounded-none hover:no-underline ${tab === selectedTab ? "text-black border-b-[5px] border-black disabled:opacity-100" : ""}`}
+              >
+                {tab}
+              </Button>
             </li>
           ))}
         </ul>
       </div>
-      <Menu items={menuItems} />
+
+      <Menu
+        items={menuItems}
+        customIcon={(isOpen) => (
+          <>
+            <UserIcon className="!w-6 !h-6" />
+            <ArrowDownIcon
+              className={`!w-4 !h-4 transition-transform duration-200 ${isOpen ? "rotate-180" : "rotate-0"}`}
+            />
+          </>
+        )}
+      />
     </div>
   );
 };

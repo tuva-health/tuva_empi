@@ -4,357 +4,46 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/providers/app_store_provider";
-import {
-  ChevronDown,
-  ChevronUp,
-  // TODO: Enable this when we implement the Person details feature
-  // Pencil,
-  GripVertical,
-  LoaderCircle,
-  Check,
-} from "lucide-react";
+import { LoaderCircle, FolderSymlink } from "lucide-react";
 import { getRoute, Route } from "@/lib/routes";
+import { Table, TableBody } from "@/components/ui/table";
+import { PersonRow, RecordTableHeader } from "@/components/person-record";
+import { MergePersonsModal } from "@/components/merge-persons-modal";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  PersonWithMetadata,
   PersonRecordWithMetadata,
   PotentialMatchWithMetadata,
 } from "@/lib/stores/person_match_slice";
-import { useDrag, useDrop } from "@react-aria/dnd";
-
-interface PersonRecordRowDetailProps {
-  record: PersonRecordWithMetadata;
-}
-
-interface PersonRecordRowDetailField {
-  label: string;
-  fieldName: string;
-}
-
-const formatMatchProbability = (
-  probability: number | undefined,
-): string | undefined => {
-  return probability !== undefined
-    ? `${Math.round(probability * 100)}%`
-    : undefined;
-};
-
-export const PersonRecordRowDetail: React.FC<PersonRecordRowDetailProps> = ({
-  record,
-}) => {
-  const formattedPercentage = formatMatchProbability(
-    record.highest_match_probability,
-  );
-
-  const rows: [
-    PersonRecordRowDetailField,
-    PersonRecordRowDetailField | null,
-  ][] = [
-    [
-      { label: "First Name", fieldName: "first_name" },
-      { label: "Last Name", fieldName: "last_name" },
-    ],
-    [
-      { label: "Birth Date", fieldName: "birth_date" },
-      { label: "Social Security Number", fieldName: "social_security_number" },
-    ],
-    [
-      { label: "Sex", fieldName: "sex" },
-      { label: "Race", fieldName: "race" },
-    ],
-    [
-      { label: "Address", fieldName: "address" },
-      { label: "City", fieldName: "city" },
-    ],
-    [{ label: "State", fieldName: "state" }, null],
-    [
-      { label: "Data Source", fieldName: "data_source" },
-      { label: "Source Person ID", fieldName: "source_person_id" },
-    ],
-  ];
-
-  return (
-    <div className="flex flex-row gap-6">
-      <div className="flex flex-col w-full h-full py-6 pl-12 gap-2">
-        {rows.map((row, ndx) => (
-          <div key={ndx} className="flex flex-row w-full gap-6">
-            <div className="flex flex-col w-full py-1 px-2 rounded max-w-1/2">
-              <p className="text-xs text-muted-foreground">{row[0].label}</p>
-              <p className="text-sm">
-                {record[row[0].fieldName]?.toString() ?? ""}
-              </p>
-            </div>
-            {row[1] ? (
-              <div className="flex flex-col w-full py-1 px-2 rounded max-w-1/2">
-                <p className="text-xs text-muted-foreground">{row[1].label}</p>
-                <p className="text-sm">
-                  {record[row[1].fieldName]?.toString() ?? ""}
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col w-full py-1 px-2 max-w-1/2"></div>
-            )}
-          </div>
-        ))}
-        {formattedPercentage && (
-          <div className="flex flex-row w-full gap-6 mb-2">
-            <div className="flex flex-col w-full py-1 px-2 rounded max-w-1/2">
-              <p className="text-xs text-muted-foreground">Match</p>
-              <p className="text-sm font-medium">{formattedPercentage}</p>
-            </div>
-            <div className="flex flex-col w-full py-1 px-2 rounded max-w-1/2"></div>
-          </div>
-        )}
-      </div>
-      <div className="flex flex-col w-full h-full"></div>
-    </div>
-  );
-};
-
-interface PersonRecordRowProps {
-  record: PersonRecordWithMetadata;
-  onExpand: (recordId: string, expanded: boolean) => void;
-  draggable: boolean;
-}
-
-export const PersonRecordRow: React.FC<PersonRecordRowProps> = ({
-  record,
-  onExpand,
-  draggable,
-}) => {
-  const formattedPercentage = formatMatchProbability(
-    record.highest_match_probability,
-  );
-
-  const { dragProps } = useDrag({
-    getItems() {
-      return [
-        {
-          "tuva/personrecord": JSON.stringify(record),
-        },
-      ];
-    },
-  });
-
-  return (
-    <React.Fragment>
-      <TableRow
-        className={record.expanded ? "bg-accent hover:bg-accent" : ""}
-        {...(draggable ? dragProps : {})}
-      >
-        <TableCell>
-          <GripVertical />
-        </TableCell>
-        <TableCell>{record.last_name}</TableCell>
-        <TableCell>{record.first_name}</TableCell>
-        <TableCell>{record.birth_date}</TableCell>
-        <TableCell>{record.city}</TableCell>
-        <TableCell>{record.state}</TableCell>
-        {formattedPercentage && <TableCell>{formattedPercentage}</TableCell>}
-        <TableCell>
-          {record.matched_or_reviewed ? (
-            <Check className="h-4 w-4 text-emerald-700" data-testid="check" />
-          ) : (
-            <span className="font-normal text-foreground">New</span>
-          )}
-        </TableCell>
-        <TableCell>
-          <Button
-            variant="ghost"
-            onClick={() => onExpand(record.id, !record.expanded)}
-          >
-            {record.expanded ? <ChevronUp /> : <ChevronDown />}
-          </Button>
-        </TableCell>
-      </TableRow>
-      <TableRow className={record.expanded ? "" : "hidden"}>
-        <TableCell
-          colSpan={formattedPercentage ? 9 : 8}
-          className="bg-white hover:bg-white"
-        >
-          <div data-testid="record-detail">
-            <PersonRecordRowDetail record={record} />
-          </div>
-        </TableCell>
-      </TableRow>
-    </React.Fragment>
-  );
-};
-
-interface PersonRowProps {
-  person: PersonWithMetadata;
-  ndx: number;
-  matchMode: boolean;
-  onExpandRecord: (
-    personId: string,
-    recordId: string,
-    expanded: boolean,
-  ) => void;
-  onRecordDrop?: (
-    personRecord: PersonRecordWithMetadata,
-    toPersonId: string,
-  ) => void;
-  recordDraggable: boolean;
-}
-
-const PersonRow: React.FC<PersonRowProps> = ({
-  person,
-  ndx,
-  matchMode,
-  onExpandRecord,
-  onRecordDrop,
-  recordDraggable,
-}: PersonRowProps) => {
-  const bgClassNames = [
-    "bg-chart-2",
-    "bg-chart-1",
-    "bg-chart-3",
-    "bg-chart-4",
-    "bg-chart-5",
-  ];
-  const bgClassNamesMuted = [
-    "bg-chart-2/15",
-    "bg-chart-1/15",
-    "bg-chart-3/15",
-    "bg-chart-4/15",
-    "bg-chart-5/15",
-  ];
-  const bgClassNamesLessMuted = [
-    "bg-chart-2/25",
-    "bg-chart-1/25",
-    "bg-chart-3/25",
-    "bg-chart-4/25",
-    "bg-chart-5/25",
-  ];
-  const bgClassName = bgClassNames[ndx % 5];
-  const bgClassNameMuted = bgClassNamesMuted[ndx % 5];
-  const bgClassNameLessMuted = bgClassNamesLessMuted[ndx % 5];
-
-  const ref = React.useRef(null);
-  const { dropProps, isDropTarget } = useDrop({
-    ref,
-    async onDrop(e) {
-      const dropItem = e.items[0];
-
-      if (dropItem.kind === "text" && "getText" in dropItem) {
-        const personRecordJSON = await dropItem.getText("tuva/personrecord");
-        const personRecord = JSON.parse(personRecordJSON);
-
-        if (personRecord && onRecordDrop) {
-          onRecordDrop(personRecord, person.id);
-        }
-      } else {
-        console.error("getText is not available on this DropItem type.");
-      }
-    },
-  });
-
-  const isNewPerson = person.id.startsWith("new-person-");
-  const personIndex = isNewPerson
-    ? parseInt(person.id.replace("new-person-", ""))
-    : undefined;
-  const displayText = isNewPerson ? `New Person ${personIndex}` : person.id;
-
-  return (
-    <React.Fragment>
-      <TableRow
-        className={isDropTarget ? bgClassNameLessMuted : "hover:bg-transparent"}
-        ref={ref}
-        {...dropProps}
-      >
-        <TableCell className={`${bgClassName}`}></TableCell>
-        <TableCell className={`${bgClassNameMuted}`}>{displayText}</TableCell>
-        <TableCell className={`${bgClassNameMuted}`}></TableCell>
-        <TableCell className={`${bgClassNameMuted}`}></TableCell>
-        <TableCell className={`${bgClassNameMuted}`}></TableCell>
-        <TableCell className={`${bgClassNameMuted}`}></TableCell>
-        {matchMode && <TableCell className={`${bgClassNameMuted}`}></TableCell>}
-        <TableCell className={`${bgClassNameMuted}`}></TableCell>
-        <TableCell className={`${bgClassNameMuted}`}>
-          <div className="w-[48px] h-[36px]"></div>
-          {/**
-           * TODO: Enable this when we implement the Person details feature
-           * <Button variant="ghost">
-           *   <Pencil />
-           * </Button>
-           */}
-        </TableCell>
-      </TableRow>
-      {person.records.map((record) => (
-        <PersonRecordRow
-          key={record.id}
-          record={record}
-          onExpand={onExpandRecord.bind(null, person.id)}
-          draggable={recordDraggable}
-        />
-      ))}
-    </React.Fragment>
-  );
-};
-
-interface TableHeaderProps {
-  matchMode: boolean;
-}
-
-export const RecordTableHeader: React.FC<TableHeaderProps> = ({
-  matchMode,
-}) => (
-  <TableHeader>
-    <TableRow className="pointer-events-none">
-      <TableHead className="w-[32px]"></TableHead>
-      <TableHead>Last Name</TableHead>
-      <TableHead>First Name</TableHead>
-      <TableHead>Birth Date</TableHead>
-      <TableHead>City</TableHead>
-      <TableHead>State</TableHead>
-      {matchMode && <TableHead>Match</TableHead>}
-      <TableHead>Status</TableHead>
-      <TableHead className="w-[64px]"></TableHead>
-    </TableRow>
-  </TableHeader>
-);
+import { isPotentialMatchUpdated } from "@/lib/utils";
 
 export const RecordManager: React.FC = () => {
   const router = useRouter();
-  const matchMode = useAppStore((state) => state.personMatch.matchMode);
-  const currentPotentialMatches = useAppStore(
-    (state) => state.personMatch.currentPotentialMatches,
-  );
-  const selectedPotentialMatchId = useAppStore(
-    (state) => state.personMatch.selectedPotentialMatchId,
-  );
-  const currentPersons = useAppStore(
-    (state) => state.personMatch.currentPersons,
-  );
-  const selectedPersonId = useAppStore(
-    (state) => state.personMatch.selectedPersonId,
-  );
-  const resetCurrentPotentialMatch = useAppStore(
-    (state) => state.personMatch.resetCurrentPotentialMatch,
-  );
-  const setPersonRecordExpanded = useAppStore(
-    (state) => state.personMatch.setPersonRecordExpanded,
-  );
-  const movePersonRecord = useAppStore(
-    (state) => state.personMatch.movePersonRecord,
-  );
-  const matchPersonRecords = useAppStore(
-    (state) => state.personMatch.matchPersonRecords,
-  );
-  const createNewPerson = useAppStore(
-    (state) => state.personMatch.createNewPerson,
-  );
+
+  const {
+    matchMode,
+    removePerson,
+    selectSummary,
+    currentPersons,
+    openMergeModal,
+    createNewPerson,
+    personSummaries,
+    isMergeModalOpen,
+    potentialMatches,
+    selectedPersonId,
+    movePersonRecord,
+    matchPersonRecords,
+    currentPotentialMatches,
+    potentialMatchSummaries,
+    selectedPotentialMatchId,
+    resetCurrentPotentialMatch,
+  } = useAppStore((state) => state.personMatch);
 
   const potentialMatch =
     matchMode && selectedPotentialMatchId
       ? currentPotentialMatches[selectedPotentialMatchId]
+      : undefined;
+  const initialPotentialMatch =
+    matchMode && selectedPotentialMatchId
+      ? potentialMatches[selectedPotentialMatchId]
       : undefined;
   const persons =
     !matchMode && selectedPersonId && selectedPersonId in currentPersons
@@ -363,108 +52,170 @@ export const RecordManager: React.FC = () => {
   const loading = matchMode
     ? selectedPotentialMatchId && !potentialMatch
     : selectedPersonId && persons.length === 0;
+  const renderedPersons = Object.values(
+    matchMode
+      ? ((potentialMatch as PotentialMatchWithMetadata)?.persons ?? [])
+      : persons,
+  );
+  const isUpdated = isPotentialMatchUpdated(
+    potentialMatch,
+    initialPotentialMatch,
+  );
+
+  const handleReset = (): void => {
+    if (potentialMatch) {
+      resetCurrentPotentialMatch(potentialMatch.id);
+    }
+  };
+
+  const handleSave = (): void => {
+    if (potentialMatch) {
+      matchPersonRecords(potentialMatch.id);
+
+      const params: { matchMode?: string; id?: string } = {};
+
+      if (matchMode) {
+        params.matchMode = "true";
+      }
+      router.push(getRoute(Route.personMatch, undefined, params), {
+        scroll: false,
+      });
+    }
+  };
+
+  const handleSummaryClick = (): void => {
+    const summaries = Object.values(
+      matchMode ? potentialMatchSummaries : personSummaries,
+    );
+    const id = summaries?.[0]?.id;
+
+    if (!id) {
+      return;
+    }
+
+    selectSummary(id);
+
+    const params: { matchMode?: string; id: string } = { id };
+
+    if (matchMode) {
+      params.matchMode = matchMode.toString();
+    }
+
+    router.push(getRoute(Route.personMatch, undefined, params), {
+      scroll: false,
+    });
+  };
+
+  const handleRecordDrop = (
+    personRecord: PersonRecordWithMetadata,
+    toPersonId: string,
+  ): void => {
+    if (!matchMode || !potentialMatch) return;
+
+    movePersonRecord(potentialMatch.id, personRecord, toPersonId);
+  };
 
   return (
-    <div className="flex flex-col w-full gap-6 pt-4 pb-6 pl-5">
-      <div className="flex flex-row h-[40px] items-center justify-between">
-        <h3 className="text-primary scroll-m-20 text-xl font-semibold tracking-tight">
-          Record Management
-        </h3>
-        {matchMode && potentialMatch ? (
-          <div className="flex flex-row gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => resetCurrentPotentialMatch(potentialMatch.id)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                matchPersonRecords(potentialMatch.id);
+    <div className="flex flex-col w-full">
+      <div className="flex flex-row-reverse items-center gap-4 p-3 border-b">
+        {matchMode && !!potentialMatch?.id && (
+          <div className="flex items-center gap-4 px-6">
+            {isUpdated && (
+              <Button className="h-10" variant="ghost" onClick={handleReset}>
+                Cancel
+              </Button>
+            )}
 
-                const params: { matchMode?: string; id?: string } = {};
-
-                if (matchMode) {
-                  params.matchMode = "true";
-                }
-                router.push(getRoute(Route.personMatch, undefined, params), {
-                  scroll: false,
-                });
-              }}
+            <Button
+              className="h-10 disabled:cursor-not-allowed disabled:pointer-events-auto disabled:hover:bg-primary"
+              disabled={!isUpdated}
+              onClick={handleSave}
             >
               Save
             </Button>
+
+            {matchMode && (
+              <Button
+                variant="outline"
+                className="h-10 disabled:cursor-not-allowed disabled:pointer-events-auto disabled:hover:bg-transparent"
+                onClick={openMergeModal}
+                disabled={
+                  !potentialMatch?.id ||
+                  Object.keys(potentialMatch.persons).length < 2
+                }
+              >
+                <FolderSymlink />
+                Merge Persons
+              </Button>
+            )}
           </div>
-        ) : (
-          <></>
         )}
+
+        {!loading &&
+          ((!matchMode && !selectedPersonId) ||
+            (matchMode && !selectedPotentialMatchId)) && (
+            <Button className="h-10" onClick={handleSummaryClick}>
+              Next {matchMode ? "Match" : "Person"}
+            </Button>
+          )}
+
+        <div className="h-10" />
       </div>
+
       {(matchMode && potentialMatch) || (!matchMode && persons.length > 0) ? (
-        <div className="h-full w-full overflow-y-auto">
-          <div className="border rounded">
+        <div className="h-full mr-4 p-4 border-r">
+          <div className="border rounded-md">
             <Table>
               <RecordTableHeader matchMode={matchMode} />
               <TableBody>
-                {Object.values(
-                  matchMode
-                    ? (potentialMatch as PotentialMatchWithMetadata).persons
-                    : persons,
-                ).map((person, ndx) => (
+                {renderedPersons.map((person, ndx) => (
                   <PersonRow
                     key={person.id}
                     person={person}
                     ndx={ndx}
                     matchMode={matchMode}
-                    onExpandRecord={(
-                      personId: string,
-                      recordId: string,
-                      expanded: boolean,
-                    ) =>
-                      setPersonRecordExpanded(
-                        personId,
-                        recordId,
-                        expanded,
-                        matchMode
-                          ? (potentialMatch as PotentialMatchWithMetadata).id
-                          : undefined,
-                      )
-                    }
-                    onRecordDrop={
-                      matchMode
-                        ? movePersonRecord.bind(
-                            null,
-                            (potentialMatch as PotentialMatchWithMetadata).id,
-                          )
-                        : undefined
-                    }
-                    recordDraggable={matchMode}
+                    removePerson={removePerson}
+                    onRecordDrop={handleRecordDrop}
+                    personsCount={renderedPersons.length}
                   />
                 ))}
               </TableBody>
             </Table>
           </div>
+
           {matchMode && potentialMatch && (
-            <div className="flex flex-row items-start justify-start pt-6">
-              <Button
-                variant="outline"
-                onClick={() => createNewPerson(potentialMatch.id)}
-              >
-                + Create New Person
-              </Button>
-            </div>
+            <Button
+              className="mt-4"
+              variant="outline"
+              onClick={() => createNewPerson(potentialMatch.id)}
+            >
+              + Create New Person
+            </Button>
           )}
         </div>
       ) : loading ? (
-        <div className="flex flex-row items-center justify-center max-h-[444px] h-full w-full">
+        <div className="flex items-center justify-center h-full w-full">
           <LoaderCircle className="animate-spin" />
         </div>
       ) : (
-        <div className="flex flex-row items-center justify-center max-h-[444px] h-full w-full bg-zinc-50">
+        <div className="flex flex-col items-center justify-center h-full w-[calc(100%-2rem)] m-4 bg-zinc-50 rounded-md">
           <p className="text-sm">
-            {`Select ${matchMode ? "potential matches" : "persons"} on the left to view and manage records`}
+            Click the “Next {matchMode ? "match" : "person"}” button above
+          </p>
+          <p className="text-sm">
+            or select a {matchMode ? "match" : "person"} on the left to begin
           </p>
         </div>
       )}
+
+      {matchMode &&
+        !!potentialMatch?.id &&
+        Object.keys(potentialMatch.persons).length > 1 && (
+          <MergePersonsModal
+            isOpen={isMergeModalOpen}
+            persons={Object.values(potentialMatch.persons)}
+          />
+        )}
     </div>
   );
 };

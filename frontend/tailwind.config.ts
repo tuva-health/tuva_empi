@@ -52,11 +52,15 @@ const config: Config = {
         },
         // custom
         "light-blue": "var(--light-blue)",
+        "muted-text": "var(--muted-text)",
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      opacity: {
+        8: "0.08",
       },
     },
   },

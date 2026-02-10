@@ -185,16 +185,14 @@ describe("PersonMatchSlice", () => {
         id: "existing-123",
         version: 1,
         records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-          { id: "record-2", expanded: false } as PersonRecordWithMetadata,
+          { id: "record-1" } as PersonRecordWithMetadata,
+          { id: "record-2" } as PersonRecordWithMetadata,
         ],
         created: new Date(),
       };
       const newPersonWithRecords: PersonWithMetadata = {
         id: "new-person-1",
-        records: [
-          { id: "record-3", expanded: false } as PersonRecordWithMetadata,
-        ],
+        records: [{ id: "record-3" } as PersonRecordWithMetadata],
         created: new Date(),
       };
       const newPersonNoRecords: PersonWithMetadata = {
@@ -308,8 +306,8 @@ describe("PersonMatchSlice", () => {
         id: "existing-123",
         version: 1,
         records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-          { id: "record-2", expanded: false } as PersonRecordWithMetadata,
+          { id: "record-1" } as PersonRecordWithMetadata,
+          { id: "record-2" } as PersonRecordWithMetadata,
         ],
         created: new Date(),
       };
@@ -363,8 +361,8 @@ describe("PersonMatchSlice", () => {
         id: "existing-123",
         version: 1,
         records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-          { id: "record-2", expanded: false } as PersonRecordWithMetadata,
+          { id: "record-1" } as PersonRecordWithMetadata,
+          { id: "record-2" } as PersonRecordWithMetadata,
         ],
         created: new Date(),
       };
@@ -485,9 +483,7 @@ describe("PersonMatchSlice", () => {
       const person1: PersonWithMetadata = {
         id: "person-1",
         version: 1,
-        records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-        ],
+        records: [{ id: "record-1" } as PersonRecordWithMetadata],
         created: new Date(),
       };
       const person2: PersonWithMetadata = {
@@ -564,9 +560,7 @@ describe("PersonMatchSlice", () => {
       const person: PersonWithMetadata = {
         id: "person-1",
         version: 1,
-        records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-        ],
+        records: [{ id: "record-1" } as PersonRecordWithMetadata],
         created: new Date(),
       };
 
@@ -614,8 +608,8 @@ describe("PersonMatchSlice", () => {
         id: "existing-123",
         version: 1,
         records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-          { id: "record-2", expanded: false } as PersonRecordWithMetadata,
+          { id: "record-1" } as PersonRecordWithMetadata,
+          { id: "record-2" } as PersonRecordWithMetadata,
         ],
         created: new Date(),
       };
@@ -699,8 +693,8 @@ describe("PersonMatchSlice", () => {
         id: "existing-123",
         version: 1,
         records: [
-          { id: "record-1", expanded: false } as PersonRecordWithMetadata,
-          { id: "record-2", expanded: false } as PersonRecordWithMetadata,
+          { id: "record-1" } as PersonRecordWithMetadata,
+          { id: "record-2" } as PersonRecordWithMetadata,
         ],
         created: new Date(),
       };

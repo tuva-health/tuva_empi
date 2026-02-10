@@ -28,6 +28,7 @@ interface ComboboxProps {
   id: string;
   items: Option[];
   placeholder: string;
+  initialValue?: string;
   inputPlaceholder?: string;
   emptyMessage?: string;
   onChange: (value: string) => void;
@@ -35,6 +36,7 @@ interface ComboboxProps {
 
 export const Combobox: React.FC<ComboboxProps> = ({
   id,
+  initialValue,
   items,
   placeholder,
   inputPlaceholder,
@@ -42,7 +44,11 @@ export const Combobox: React.FC<ComboboxProps> = ({
   onChange,
 }) => {
   const [open, setOpen] = React.useState(false);
-  const [value, setValue] = React.useState("");
+  const [value, setValue] = React.useState(initialValue ?? "");
+
+  React.useEffect(() => {
+    setValue(initialValue ?? "");
+  }, [initialValue]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
