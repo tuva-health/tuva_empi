@@ -335,7 +335,6 @@ class EMPIService:
 
                     table = PersonRecordStaging._meta.db_table
                     temp_table = table + "_temp"
-
                     # Create temporary table like PersonRecord table but without
                     # id, created or job_id columns
 
